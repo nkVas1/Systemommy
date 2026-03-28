@@ -13,7 +13,8 @@ def _run_bat_text() -> str:
 
 def test_launcher_uses_local_wheel_cache_when_available() -> None:
     content = _run_bat_text()
-    assert 'if exist ".wheels\\*"' in content
+    assert 'dir /b ".wheels\\*.whl" >nul 2>nul' in content
+    assert "if %errorlevel% equ 0" in content
     assert "pip install --no-index --find-links=.wheels -r requirements.txt" in content
 
 
