@@ -12,6 +12,7 @@ REM --- Robust pip settings for unstable connections ---
 REM PIP_DEFAULT_TIMEOUT affects ALL pip operations, including
 REM internal subprocesses that install build dependencies.
 set PIP_DEFAULT_TIMEOUT=300
+REM Fail faster on unstable links to avoid long retry storms.
 set PIP_RETRIES=4
 set PIP_DISABLE_PIP_VERSION_CHECK=1
 
@@ -62,6 +63,7 @@ if %errorlevel% neq 0 (
     echo       Please wait...
     echo.
     set HAS_LOCAL_WHEELS=0
+    REM Enable offline install only when BOTH required wheel families are present.
     dir /b ".wheels\PySide6*.whl" >nul 2>nul && dir /b ".wheels\psutil*.whl" >nul 2>nul && set HAS_LOCAL_WHEELS=1
     if "%HAS_LOCAL_WHEELS%"=="1" (
         echo       Found local wheel cache: .wheels
