@@ -11,7 +11,7 @@ echo.
 REM --- Robust pip settings for unstable connections ---
 REM PIP_DEFAULT_TIMEOUT affects ALL pip operations, including
 REM internal subprocesses that install build dependencies.
-set PIP_DEFAULT_TIMEOUT=180
+set PIP_DEFAULT_TIMEOUT=300
 set PIP_RETRIES=4
 set PIP_DISABLE_PIP_VERSION_CHECK=1
 
@@ -66,7 +66,7 @@ if %errorlevel% neq 0 (
         echo       Installing offline from local files...
         pip install --no-index --find-links=.wheels -r requirements.txt
     ) else (
-        pip install --prefer-binary --only-binary=:all: --timeout %PIP_DEFAULT_TIMEOUT% --retries %PIP_RETRIES% -r requirements.txt
+        pip install --prefer-binary --timeout %PIP_DEFAULT_TIMEOUT% --retries %PIP_RETRIES% -r requirements.txt
     )
     if %errorlevel% neq 0 (
         echo.
