@@ -27,11 +27,11 @@ def test_launcher_upgrades_pip_before_install() -> None:
     assert "pip install --upgrade pip" in content
 
 
-def test_launcher_uses_editable_install() -> None:
-    """Package must be installed via pip install -e . for proper imports."""
+def test_launcher_uses_requirements_txt() -> None:
+    """Package dependencies must be installed via pip install -r requirements.txt."""
     content = _run_bat_text()
     assert "pip install" in content
-    assert "-e ." in content
+    assert "requirements.txt" in content
 
 
 def test_launcher_supports_force_flag() -> None:
@@ -50,6 +50,13 @@ def test_launcher_checks_python_version() -> None:
     """Launcher must verify Python >= 3.10."""
     content = _run_bat_text()
     assert "3,10" in content or "3, 10" in content
+
+
+def test_launcher_sets_pythonpath() -> None:
+    """Launcher must set PYTHONPATH to src/ for package resolution."""
+    content = _run_bat_text()
+    assert "PYTHONPATH" in content
+    assert "src" in content
 
 
 def test_launcher_detects_broken_venv() -> None:

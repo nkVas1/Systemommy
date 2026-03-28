@@ -192,10 +192,11 @@ The launcher is designed for a zero-friction experience on Windows 7–11:
 2. **Creates a virtual environment** — isolated from system Python.
 3. **Detects broken venvs** — if the venv's `python.exe` can't start, the
    launcher deletes and recreates it automatically.
-4. **Upgrades pip/setuptools/wheel** — ensures PEP 660 editable installs and
-   modern wheel support work correctly (old pip in fresh venvs can fail).
-5. **Installs via `pip install -e .`** — installs the package properly so all
-   imports work without PYTHONPATH hacks.
+4. **Installs via `pip install -r requirements.txt`** — installs only runtime
+   dependencies (PySide6, psutil) as pre-built binary wheels. No build
+   isolation, no setuptools download — fast and reliable even on slow networks.
+5. **Sets `PYTHONPATH`** — points to `src/` so Python can find the `systemommy`
+   package without a full package install.
 6. **Offline `.wheels` cache** — detects pre-downloaded wheels and installs
    from them when both `PySide6*.whl` and `psutil*.whl` are present.
 7. **Launches with `pythonw`** — no console window cluttering the desktop.

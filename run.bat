@@ -5,7 +5,10 @@ title Systemommy — Hardware Monitor
 cd /d "%~dp0"
 
 REM ============================================================
-REM  Systemommy — one-click launcher for Windows 7 / 8 / 10 / 11
+REM  Systemommy — one-click launcher for Windows
+REM
+REM  Installs dependencies via requirements.txt (fast, no build
+REM  isolation) and runs the app with PYTHONPATH pointing to src/.
 REM
 REM  Usage:
 REM    run.bat                  Normal launch
@@ -24,15 +27,15 @@ for %%A in (%*) do (
 )
 
 echo.
-echo ============================================
-echo        Systemommy — Hardware Monitor
-echo ============================================
+echo  ============================================
+echo        Systemommy  —  Hardware Monitor
+echo  ============================================
 echo.
 
 REM ========================================================
 REM  STEP 1 — Locate a working Python 3.10+ interpreter
 REM ========================================================
-echo [1/4] Checking Python...
+echo  [1/4] Checking Python...
 
 set "PYTHON="
 
@@ -66,14 +69,14 @@ if !errorlevel! equ 0 (
     )
 )
 
-echo       [ERROR] Python 3.10+ is not installed or not in PATH.
+echo        [ERROR] Python 3.10+ is not installed or not in PATH.
 echo.
-echo       Download Python from: https://www.python.org/downloads/
-echo       During installation check "Add Python to PATH".
+echo        Download Python from: https://www.python.org/downloads/
+echo        During installation check "Add Python to PATH".
 goto :fail
 
 :python_ok
-for /f "delims=" %%v in ('!PYTHON! --version 2^>^&1') do echo       %%v
+for /f "delims=" %%v in ('!PYTHON! --version 2^>^&1') do echo        %%v
 echo.
 
 REM ========================================================
@@ -88,9 +91,9 @@ set "VENV_ACTIVATE=!VENV_DIR!\Scripts\activate.bat"
 REM 2a. --force: wipe existing venv
 if "!FLAG_FORCE!"=="1" (
     if exist "!VENV_DIR!" (
-        echo [2/4] Force mode: removing old environment...
+        echo  [2/4] Force mode: removing old environment...
         rmdir /s /q "!VENV_DIR!" 2>nul
-        echo       Done.
+        echo        Done.
         echo.
     )
 )
@@ -99,28 +102,28 @@ REM 2b. Health-check: if venv python is broken, wipe and recreate
 if exist "!VENV_PYTHON!" (
     "!VENV_PYTHON!" -c "import sys" >nul 2>nul
     if !errorlevel! neq 0 (
-        echo [!] Virtual environment is corrupted — recreating...
+        echo  [!] Virtual environment corrupted — recreating...
         rmdir /s /q "!VENV_DIR!" 2>nul
     )
 )
 
 REM 2c. Create venv if it does not exist
 if not exist "!VENV_ACTIVATE!" (
-    echo [2/4] Creating virtual environment...
+    echo  [2/4] Creating virtual environment...
     !PYTHON! -m venv "!VENV_DIR!"
     if !errorlevel! neq 0 (
-        echo       [ERROR] Failed to create virtual environment.
+        echo        [ERROR] Failed to create virtual environment.
         echo.
-        echo       Possible causes:
-        echo         - Antivirus blocking file creation
-        echo         - Insufficient disk space
-        echo         - Python was installed without venv support
+        echo        Possible causes:
+        echo          - Antivirus blocking file creation
+        echo          - Insufficient disk space
+        echo          - Python was installed without venv support
         goto :fail
     )
-    echo       Done.
+    echo        Done.
     echo.
 ) else (
-    echo [2/4] Virtual environment OK.
+    echo  [2/4] Virtual environment OK.
     echo.
 )
 
@@ -129,31 +132,42 @@ call "!VENV_ACTIVATE!"
 
 REM ========================================================
 REM  STEP 3 — Install / verify packages
+REM
+REM  Uses requirements.txt for a direct pip install.
+REM  No build isolation, no setuptools download — just binary
+REM  wheels from PyPI. This is significantly faster and more
+REM  reliable than "pip install -e ." which needed to download
+REM  setuptools>=68.0 into an isolated build environment.
 REM ========================================================
+set "PYTHONPATH=%~dp0src"
 set "NEEDS_INSTALL=0"
 
 if "!FLAG_FORCE!"=="1" (
     set "NEEDS_INSTALL=1"
 )
 
+REM Quick check: are runtime deps importable? (keep in sync with requirements.txt)
 if "!NEEDS_INSTALL!"=="0" (
-    python -c "from systemommy import __version__; import PySide6; import psutil" >nul 2>nul
+    python -c "import PySide6; import psutil" >nul 2>nul
     if !errorlevel! neq 0 set "NEEDS_INSTALL=1"
 )
 
 if "!NEEDS_INSTALL!"=="1" (
-    echo [3/4] Installing Systemommy and dependencies...
-    echo       PySide6 is ~570 MB — first install may take a few minutes.
+    echo  [3/4] Installing dependencies...
+    echo        PySide6 is ~570 MB — first install may take a few minutes.
     echo.
 
-    REM Upgrade pip/setuptools/wheel so that modern wheels and
-    REM editable installs (PEP 660) work correctly.
-    echo       Preparing package manager...
-    python -m pip install --upgrade pip setuptools wheel --quiet 2>nul
-    echo       Done.
+    REM Upgrade pip itself (don't fail if offline — old pip may be OK)
+    echo        Upgrading pip...
+    python -m pip install --upgrade pip --quiet --timeout 30 2>nul
+    if !errorlevel! neq 0 (
+        echo        [note] pip upgrade skipped — continuing with current version.
+    ) else (
+        echo        Done.
+    )
     echo.
 
-    REM Pip settings: generous timeout, a few retries, skip version nag
+    REM Pip settings: generous timeout, retries, no version nag
     set "PIP_DEFAULT_TIMEOUT=300"
     set "PIP_RETRIES=5"
     set "PIP_DISABLE_PIP_VERSION_CHECK=1"
@@ -169,67 +183,65 @@ if "!NEEDS_INSTALL!"=="1" (
     )
 
     if "!USE_CACHE!"=="1" (
-        echo       Found local wheel cache: .wheels\
-        echo       Installing from local files...
-        pip install --no-index --find-links=.wheels -e .
+        echo        Installing from local cache: .wheels\
+        pip install --no-index --find-links=.wheels -r requirements.txt
     ) else (
-        echo       Downloading from PyPI...
-        pip install --prefer-binary -e .
+        echo        Downloading from PyPI...
+        pip install --prefer-binary -r requirements.txt
     )
 
     if !errorlevel! neq 0 (
         echo.
-        echo       [ERROR] Installation failed.
+        echo        [ERROR] Installation failed.
         echo.
-        echo       Possible causes:
-        echo         - Unstable internet connection
-        echo         - PyPI temporarily unavailable
-        echo         - Insufficient disk space (PySide6 needs ~1.5 GB)
+        echo        Possible causes:
+        echo          - Unstable internet connection
+        echo          - PyPI temporarily unavailable
+        echo          - Insufficient disk space (PySide6 needs ~1.5 GB)
         echo.
-        echo       Recovery options:
-        echo         1. Run this script again
-        echo         2. run.bat --force   (full reinstall)
-        echo         3. Pre-download packages for offline install:
-        echo              venv\Scripts\activate.bat
-        echo              pip download --dest .wheels PySide6 psutil
-        echo              run.bat
+        echo        Recovery options:
+        echo          1. Run this script again
+        echo          2. run.bat --force   (full reinstall)
+        echo          3. Pre-download packages for offline install:
+        echo               venv\Scripts\activate.bat
+        echo               pip download --dest .wheels PySide6 psutil
+        echo               run.bat
         goto :fail
     )
 
     echo.
-    echo       Installation complete.
+    echo        Installation complete.
     echo.
 ) else (
-    echo [3/4] All packages are up to date.
+    echo  [3/4] All packages are up to date.
     echo.
 )
 
 REM ========================================================
 REM  STEP 4 — Launch the application
 REM ========================================================
-python -c "from systemommy import __version__ as v; print(f'       Systemommy v{v}')" 2>nul
+python -c "from systemommy import __version__ as v; print(f'        Systemommy v{v}')" 2>nul
 if !errorlevel! neq 0 (
-    echo       [ERROR] Module verification failed.
-    echo       Try:  run.bat --force
+    echo        [ERROR] Cannot find systemommy module.
+    echo        Try:  run.bat --force
     goto :fail
 )
 
-echo [4/4] Launching Systemommy...
+echo  [4/4] Launching Systemommy...
 echo.
 
 if "!FLAG_CONSOLE!"=="1" (
-    echo       Console mode — press Ctrl+C to stop.
+    echo        Console mode — press Ctrl+C to stop.
     echo.
     python -m systemommy
     goto :eof
 )
 
-REM Launch windowless via pythonw from the venv.
-REM "start" always returns 0, so we verify the process separately.
+REM Launch windowless via pythonw (no console window).
 start "" "!VENV_PYTHONW!" -m systemommy
 
-echo       Systemommy is running.
-echo       Look for the green "S" icon in your system tray.
+echo        Systemommy is running.
+echo        Look for the green "S" icon in your system tray.
 echo.
 timeout /t 3 /nobreak >nul
 exit /b 0
@@ -259,13 +271,13 @@ exit /b 0
 REM ============================================================
 :fail
 echo.
-echo ============================================
+echo  ============================================
 echo   Tips:
 echo     run.bat --force     full reinstall
 echo     run.bat --console   see error details
 echo     run.bat --help      all options
-echo ============================================
+echo  ============================================
 echo.
-echo Press any key to exit...
+echo  Press any key to exit...
 pause >nul
 exit /b 1

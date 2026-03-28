@@ -35,7 +35,7 @@ run.bat
 That's it. The launcher will:
 1. Find Python on your system (supports `py` launcher, `python`, `python3`)
 2. Create a virtual environment
-3. Upgrade pip and install all dependencies automatically
+3. Install dependencies from `requirements.txt` (fast, no build step)
 4. Start Systemommy
 
 ### Launcher Options
@@ -49,7 +49,8 @@ That's it. The launcher will:
 ### Manual launch (any OS, for development)
 
 ```bash
-pip install -e .
+pip install -r requirements.txt
+set PYTHONPATH=src
 python -m systemommy
 ```
 
@@ -86,15 +87,6 @@ pip download --dest .wheels PySide6 psutil
 ```
 
 Then run `run.bat` — it detects the `.wheels` folder and installs offline.
-
-### PySide6 version not found
-
-Make sure Python is 3.10+ and pip is up to date:
-
-```bash
-python -m pip install --upgrade pip
-pip install -e .
-```
 
 ## Architecture
 
