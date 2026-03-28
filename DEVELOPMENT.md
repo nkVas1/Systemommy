@@ -183,6 +183,33 @@ Test structure follows source structure:
 
 ---
 
+## Launcher (`run.bat`)
+
+The launcher is designed for a zero-friction experience on Windows 7–11:
+
+1. **Finds Python automatically** — checks `py -3` (Windows Python Launcher),
+   `python`, and `python3` in order; skips the Microsoft Store redirect stub.
+2. **Creates a virtual environment** — isolated from system Python.
+3. **Detects broken venvs** — if the venv's `python.exe` can't start, the
+   launcher deletes and recreates it automatically.
+4. **Upgrades pip/setuptools/wheel** — ensures PEP 660 editable installs and
+   modern wheel support work correctly (old pip in fresh venvs can fail).
+5. **Installs via `pip install -e .`** — installs the package properly so all
+   imports work without PYTHONPATH hacks.
+6. **Offline `.wheels` cache** — detects pre-downloaded wheels and installs
+   from them when both `PySide6*.whl` and `psutil*.whl` are present.
+7. **Launches with `pythonw`** — no console window cluttering the desktop.
+
+### Launcher flags
+
+| Flag | Effect |
+|------|--------|
+| `--force` | Delete venv and reinstall everything from scratch |
+| `--console` | Launch the app with a visible console (for diagnostics) |
+| `--help` | Show usage information |
+
+---
+
 ## Build & Distribution
 
 Currently single-file launcher (`run.bat`). Future distribution options:
@@ -198,7 +225,7 @@ Currently single-file launcher (`run.bat`). Future distribution options:
 |------|---------|
 | `pyproject.toml` | Package metadata, dependencies, pytest config |
 | `requirements.txt` | Pip-compatible dependency list |
-| `run.bat` | One-click launcher for Windows |
+| `run.bat` | One-click launcher for Windows (auto-install + launch) |
 | `.gitignore` | Excludes venv, __pycache__, build artifacts |
 | `README.md` | User-facing documentation |
 | `DEVELOPMENT.md` | This file — developer knowledge base |

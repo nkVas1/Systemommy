@@ -1,127 +1,271 @@
 @echo off
+setlocal enabledelayedexpansion
 chcp 65001 >nul 2>nul
-title Systemommy
+title Systemommy — Hardware Monitor
 cd /d "%~dp0"
 
+REM ============================================================
+REM  Systemommy — one-click launcher for Windows 7 / 8 / 10 / 11
+REM
+REM  Usage:
+REM    run.bat                  Normal launch
+REM    run.bat --force          Delete venv and reinstall everything
+REM    run.bat --console        Launch with a console window (debug)
+REM    run.bat --help           Show help
+REM ============================================================
+
+REM ---- Parse command-line flags ----
+set "FLAG_FORCE=0"
+set "FLAG_CONSOLE=0"
+for %%A in (%*) do (
+    if /i "%%A"=="--force"   set "FLAG_FORCE=1"
+    if /i "%%A"=="--console" set "FLAG_CONSOLE=1"
+    if /i "%%A"=="--help"    goto :show_help
+)
+
+echo.
 echo ============================================
 echo        Systemommy — Hardware Monitor
 echo ============================================
 echo.
 
-REM --- Robust pip settings for unstable connections ---
-REM PIP_DEFAULT_TIMEOUT affects ALL pip operations, including
-REM internal subprocesses that install build dependencies.
-set PIP_DEFAULT_TIMEOUT=300
-REM Fail faster on unstable links to avoid long retry storms.
-set PIP_RETRIES=4
-set PIP_DISABLE_PIP_VERSION_CHECK=1
+REM ========================================================
+REM  STEP 1 — Locate a working Python 3.10+ interpreter
+REM ========================================================
+echo [1/4] Checking Python...
 
-REM --- PYTHONPATH lets Python find the package in src/ ---
-set PYTHONPATH=%~dp0src
+set "PYTHON="
 
-REM ---- Check Python ----
+REM 1a. Windows Python Launcher ("py -3") — most reliable
+where py >nul 2>nul
+if !errorlevel! equ 0 (
+    py -3 -c "import sys; sys.exit(0 if sys.version_info>=(3,10) else 1)" >nul 2>nul
+    if !errorlevel! equ 0 (
+        set "PYTHON=py -3"
+        goto :python_ok
+    )
+)
+
+REM 1b. Plain "python" on PATH (skip Microsoft Store stub)
 where python >nul 2>nul
-if %errorlevel% neq 0 (
-    echo [ERROR] Python is not installed or not in PATH.
-    echo.
-    echo Please install Python 3.10+ from:
-    echo   https://www.python.org/downloads/
-    echo.
-    echo IMPORTANT: Check "Add Python to PATH" during installation.
-    goto :fail
+if !errorlevel! equ 0 (
+    python -c "import sys; sys.exit(0 if sys.version_info>=(3,10) else 1)" >nul 2>nul
+    if !errorlevel! equ 0 (
+        set "PYTHON=python"
+        goto :python_ok
+    )
 )
 
-REM ---- Check Python version ----
-python -c "import sys; exit(0 if sys.version_info >= (3, 10) else 1)" 2>nul
-if %errorlevel% neq 0 (
-    echo [ERROR] Python 3.10 or newer is required.
-    echo Current version:
-    python --version
-    goto :fail
+REM 1c. "python3" alias (rare on Windows, common on WSL/MSYS2)
+where python3 >nul 2>nul
+if !errorlevel! equ 0 (
+    python3 -c "import sys; sys.exit(0 if sys.version_info>=(3,10) else 1)" >nul 2>nul
+    if !errorlevel! equ 0 (
+        set "PYTHON=python3"
+        goto :python_ok
+    )
 )
 
-REM ---- Create virtual environment ----
-if not exist "venv\Scripts\activate.bat" (
-    echo [1/3] Creating virtual environment...
-    python -m venv venv
-    if %errorlevel% neq 0 (
-        echo [ERROR] Failed to create virtual environment.
+echo       [ERROR] Python 3.10+ is not installed or not in PATH.
+echo.
+echo       Download Python from: https://www.python.org/downloads/
+echo       During installation check "Add Python to PATH".
+goto :fail
+
+:python_ok
+for /f "delims=" %%v in ('!PYTHON! --version 2^>^&1') do echo       %%v
+echo.
+
+REM ========================================================
+REM  STEP 2 — Prepare virtual environment
+REM ========================================================
+set "VENV_DIR=%~dp0venv"
+set "VENV_PYTHON=!VENV_DIR!\Scripts\python.exe"
+set "VENV_PYTHONW=!VENV_DIR!\Scripts\pythonw.exe"
+set "VENV_PIP=!VENV_DIR!\Scripts\pip.exe"
+set "VENV_ACTIVATE=!VENV_DIR!\Scripts\activate.bat"
+
+REM 2a. --force: wipe existing venv
+if "!FLAG_FORCE!"=="1" (
+    if exist "!VENV_DIR!" (
+        echo [2/4] Force mode: removing old environment...
+        rmdir /s /q "!VENV_DIR!" 2>nul
+        echo       Done.
+        echo.
+    )
+)
+
+REM 2b. Health-check: if venv python is broken, wipe and recreate
+if exist "!VENV_PYTHON!" (
+    "!VENV_PYTHON!" -c "import sys" >nul 2>nul
+    if !errorlevel! neq 0 (
+        echo [!] Virtual environment is corrupted — recreating...
+        rmdir /s /q "!VENV_DIR!" 2>nul
+    )
+)
+
+REM 2c. Create venv if it does not exist
+if not exist "!VENV_ACTIVATE!" (
+    echo [2/4] Creating virtual environment...
+    !PYTHON! -m venv "!VENV_DIR!"
+    if !errorlevel! neq 0 (
+        echo       [ERROR] Failed to create virtual environment.
+        echo.
+        echo       Possible causes:
+        echo         - Antivirus blocking file creation
+        echo         - Insufficient disk space
+        echo         - Python was installed without venv support
         goto :fail
     )
     echo       Done.
     echo.
+) else (
+    echo [2/4] Virtual environment OK.
+    echo.
 )
 
-REM ---- Activate virtual environment ----
-call venv\Scripts\activate.bat
+REM 2d. Activate
+call "!VENV_ACTIVATE!"
 
-REM ---- Install dependencies if needed ----
-python -c "import PySide6; import psutil" 2>nul
-if %errorlevel% neq 0 (
-    echo [2/3] Installing dependencies...
-    echo       PySide6 is ~570 MB — this may take several minutes.
-    echo       Please wait...
+REM ========================================================
+REM  STEP 3 — Install / verify packages
+REM ========================================================
+set "NEEDS_INSTALL=0"
+
+if "!FLAG_FORCE!"=="1" (
+    set "NEEDS_INSTALL=1"
+)
+
+if "!NEEDS_INSTALL!"=="0" (
+    python -c "from systemommy import __version__; import PySide6; import psutil" >nul 2>nul
+    if !errorlevel! neq 0 set "NEEDS_INSTALL=1"
+)
+
+if "!NEEDS_INSTALL!"=="1" (
+    echo [3/4] Installing Systemommy and dependencies...
+    echo       PySide6 is ~570 MB — first install may take a few minutes.
     echo.
-    set HAS_LOCAL_WHEELS=0
-    set HAS_PYSIDE6_WHEEL=0
-    set HAS_PSUTIL_WHEEL=0
-    REM Enable offline install only when BOTH required wheel families are present.
-    REM Any file matching these wheel name prefixes is treated as installable cache.
-    dir /b ".wheels\PySide6*.whl" >nul 2>nul && set HAS_PYSIDE6_WHEEL=1
-    dir /b ".wheels\psutil*.whl" >nul 2>nul && set HAS_PSUTIL_WHEEL=1
-    if "%HAS_PYSIDE6_WHEEL%"=="1" if "%HAS_PSUTIL_WHEEL%"=="1" set HAS_LOCAL_WHEELS=1
-    if "%HAS_LOCAL_WHEELS%"=="1" (
-        echo       Found local wheel cache: .wheels
-        echo       Installing offline from local files...
-        pip install --no-index --find-links=.wheels -r requirements.txt
-    ) else (
-        pip install --prefer-binary -r requirements.txt
+
+    REM Upgrade pip/setuptools/wheel so that modern wheels and
+    REM editable installs (PEP 660) work correctly.
+    echo       Preparing package manager...
+    python -m pip install --upgrade pip setuptools wheel --quiet 2>nul
+    echo       Done.
+    echo.
+
+    REM Pip settings: generous timeout, a few retries, skip version nag
+    set "PIP_DEFAULT_TIMEOUT=300"
+    set "PIP_RETRIES=5"
+    set "PIP_DISABLE_PIP_VERSION_CHECK=1"
+
+    REM Check for local wheel cache (.wheels directory)
+    set "USE_CACHE=0"
+    if exist ".wheels\" (
+        set "_HAS_QT=0"
+        set "_HAS_PS=0"
+        dir /b ".wheels\PySide6*.whl" >nul 2>nul && set "_HAS_QT=1"
+        dir /b ".wheels\psutil*.whl"  >nul 2>nul && set "_HAS_PS=1"
+        if "!_HAS_QT!"=="1" if "!_HAS_PS!"=="1" set "USE_CACHE=1"
     )
-    if %errorlevel% neq 0 (
+
+    if "!USE_CACHE!"=="1" (
+        echo       Found local wheel cache: .wheels\
+        echo       Installing from local files...
+        pip install --no-index --find-links=.wheels -e .
+    ) else (
+        echo       Downloading from PyPI...
+        pip install --prefer-binary -e .
+    )
+
+    if !errorlevel! neq 0 (
         echo.
-        echo [ERROR] Failed to install dependencies.
+        echo       [ERROR] Installation failed.
         echo.
-        echo Possible causes:
-        echo   - Slow or unstable internet connection
-        echo   - PyPI server temporarily unavailable
+        echo       Possible causes:
+        echo         - Unstable internet connection
+        echo         - PyPI temporarily unavailable
+        echo         - Insufficient disk space (PySide6 needs ~1.5 GB)
         echo.
-        echo Fast recovery (download once, then install offline):
-        echo   1. Open Command Prompt in this folder
-        echo   2. venv\Scripts\activate.bat
-        echo   3. pip download --dest .wheels -r requirements.txt
-        echo   4. Run this script again
+        echo       Recovery options:
+        echo         1. Run this script again
+        echo         2. run.bat --force   (full reinstall)
+        echo         3. Pre-download packages for offline install:
+        echo              venv\Scripts\activate.bat
+        echo              pip download --dest .wheels PySide6 psutil
+        echo              run.bat
         goto :fail
     )
+
     echo.
-    echo       Dependencies installed successfully.
+    echo       Installation complete.
+    echo.
+) else (
+    echo [3/4] All packages are up to date.
     echo.
 )
 
-REM ---- Verify module can be loaded ----
-python -c "from systemommy import __version__" 2>nul
-if %errorlevel% neq 0 (
-    echo [ERROR] Cannot load Systemommy module.
-    echo Please ensure the src\systemommy\ folder is intact.
+REM ========================================================
+REM  STEP 4 — Launch the application
+REM ========================================================
+python -c "from systemommy import __version__ as v; print(f'       Systemommy v{v}')" 2>nul
+if !errorlevel! neq 0 (
+    echo       [ERROR] Module verification failed.
+    echo       Try:  run.bat --force
     goto :fail
 )
 
-REM ---- Launch ----
-echo [3/3] Starting Systemommy...
-start "" pythonw -m systemommy
-if %errorlevel% neq 0 (
-    echo [!] Launching with console for diagnostics...
+echo [4/4] Launching Systemommy...
+echo.
+
+if "!FLAG_CONSOLE!"=="1" (
+    echo       Console mode — press Ctrl+C to stop.
+    echo.
     python -m systemommy
-    if %errorlevel% neq 0 (
-        echo.
-        echo [ERROR] Systemommy exited with an error.
-        goto :fail
-    )
+    goto :eof
 )
+
+REM Launch windowless via pythonw from the venv.
+REM "start" always returns 0, so we verify the process separately.
+start "" "!VENV_PYTHONW!" -m systemommy
+
+echo       Systemommy is running.
+echo       Look for the green "S" icon in your system tray.
+echo.
+timeout /t 3 /nobreak >nul
 exit /b 0
 
+REM ============================================================
+:show_help
+echo.
+echo   Systemommy — Hardware Temperature Monitor
+echo.
+echo   Usage:  run.bat [options]
+echo.
+echo   Options:
+echo     --force     Delete virtual environment and reinstall everything
+echo     --console   Launch with a visible console window (diagnostics)
+echo     --help      Show this message
+echo.
+echo   Offline install (for slow or no internet):
+echo     1. On a machine with internet, run:
+echo          python -m venv venv
+echo          venv\Scripts\activate.bat
+echo          pip download --dest .wheels PySide6 psutil
+echo     2. Copy the .wheels folder into this directory.
+echo     3. run.bat
+echo.
+exit /b 0
+
+REM ============================================================
 :fail
 echo.
 echo ============================================
+echo   Tips:
+echo     run.bat --force     full reinstall
+echo     run.bat --console   see error details
+echo     run.bat --help      all options
+echo ============================================
+echo.
 echo Press any key to exit...
 pause >nul
 exit /b 1
