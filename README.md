@@ -66,7 +66,6 @@ PySide6 is a large package (~570 MB). On slow connections pip may time out.
 ```bash
 venv\Scripts\activate.bat
 pip download --dest .wheels -r requirements.txt
-pip install --no-index --find-links=.wheels -r requirements.txt
 ```
 
 Then run `run.bat` again — it will install from local wheels and launch the app.
