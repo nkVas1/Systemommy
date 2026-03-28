@@ -52,6 +52,13 @@ class AlertSettings:
     gpu_critical: int = GPU_TEMP_CRITICAL
     cooldown_s: int = ALERT_COOLDOWN_S
 
+    def __post_init__(self) -> None:
+        """Ensure warning thresholds are always below critical thresholds."""
+        if self.cpu_warning >= self.cpu_critical:
+            self.cpu_warning = self.cpu_critical - 5
+        if self.gpu_warning >= self.gpu_critical:
+            self.gpu_warning = self.gpu_critical - 5
+
 
 @dataclass
 class ThermalSettings:

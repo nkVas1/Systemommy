@@ -37,8 +37,36 @@ and starts the application. No manual commands needed.
 ### Manual launch (any OS, for development)
 
 ```bash
-pip install -e .
+pip install --timeout 120 -e .
 python -m systemommy
+```
+
+## Troubleshooting
+
+### Installation timeouts
+
+If `run.bat` or `pip install` fails with `ReadTimeoutError`, your internet
+connection may be slow. PySide6 is a large package (~570 MB). Try:
+
+```bash
+pip install --timeout 300 --retries 10 -r requirements.txt
+```
+
+Or install PySide6 separately first:
+
+```bash
+pip install --timeout 300 PySide6
+pip install -r requirements.txt
+```
+
+### PySide6 version not found
+
+If pip cannot find the exact PySide6 version, make sure your Python is
+3.10+ and pip is up to date:
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
 ## Architecture
@@ -82,6 +110,22 @@ Monospace fonts (`Consolas`), CRT scanline overlay, glow effects.
 
 Settings are saved to `~/.systemommy/config.json` and persist across restarts.
 All options are accessible from the Settings window (system tray → Settings).
+
+## Development
+
+### Running tests
+
+```bash
+pip install -e ".[dev]"
+QT_QPA_PLATFORM=offscreen python -m pytest tests/ -v
+```
+
+On Windows (no display server needed):
+
+```bash
+pip install -e ".[dev]"
+python -m pytest tests/ -v
+```
 
 ## License
 

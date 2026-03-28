@@ -9,6 +9,7 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QMessageBox
 
 from systemommy.config import AppConfig
+from systemommy.constants import ALERT_SOUND_MAX_PLAYS
 from systemommy.hardware.monitor import HardwareSnapshot
 from systemommy.hardware.thermal import ThermalCorrector
 
@@ -125,7 +126,7 @@ class AlertManager(QObject):
         logger.warning(message)
         self.alert_triggered.emit(level, message)
 
-        if self._config.alerts.sound_enabled and self._sound_play_count < 2:
+        if self._config.alerts.sound_enabled and self._sound_play_count < ALERT_SOUND_MAX_PLAYS:
             _play_alert_sound()
             self._sound_play_count += 1
 
