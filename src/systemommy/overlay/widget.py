@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QPainter, QPaintEvent
+from PySide6.QtGui import QColor, QFont, QPainter, QPaintEvent
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from systemommy.config import AppConfig
@@ -111,9 +111,6 @@ class OverlayWidget(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         # Background
-        bg = painter.brush()
-        from PySide6.QtGui import QColor
-
         bg_color = QColor(10, 10, 10, int(255 * self._config.overlay.opacity))
         painter.setBrush(bg_color)
         painter.setPen(Qt.PenStyle.NoPen)
