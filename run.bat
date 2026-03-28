@@ -60,7 +60,7 @@ if %errorlevel% neq 0 (
     echo       PySide6 is ~570 MB — this may take several minutes.
     echo       Please wait...
     echo.
-    python -m pip install --upgrade pip 2>nul
+    python -m pip install --upgrade pip
     pip install -r requirements.txt
     if %errorlevel% neq 0 (
         echo.
