@@ -146,7 +146,7 @@ if "!FLAG_FORCE!"=="1" (
     set "NEEDS_INSTALL=1"
 )
 
-REM Quick check: are PySide6 and psutil already importable?
+REM Quick check: are runtime deps importable? (keep in sync with requirements.txt)
 if "!NEEDS_INSTALL!"=="0" (
     python -c "import PySide6; import psutil" >nul 2>nul
     if !errorlevel! neq 0 set "NEEDS_INSTALL=1"
@@ -161,7 +161,7 @@ if "!NEEDS_INSTALL!"=="1" (
     echo        Upgrading pip...
     python -m pip install --upgrade pip --quiet --timeout 30 2>nul
     if !errorlevel! neq 0 (
-        echo        [note] pip upgrade skipped (no network?^) — continuing.
+        echo        [note] pip upgrade skipped — continuing with current version.
     ) else (
         echo        Done.
     )
