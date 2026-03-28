@@ -1,1 +1,0 @@
-"""Database module — SQLite persistence."""
