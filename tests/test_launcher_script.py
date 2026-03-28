@@ -19,7 +19,9 @@ def test_launcher_uses_local_wheel_cache_when_available() -> None:
     assert ".wheels" in content
     assert "PySide6*.whl" in content
     assert "psutil*.whl" in content
-    assert 'if "%HAS_PYSIDE6_WHEEL%"=="1" if "%HAS_PSUTIL_WHEEL%"=="1" set HAS_LOCAL_WHEELS=1' in content
+    assert 'if "%HAS_PYSIDE6_WHEEL%"=="1"' in content
+    assert 'if "%HAS_PSUTIL_WHEEL%"=="1"' in content
+    assert "set HAS_LOCAL_WHEELS=1" in content
     assert 'if "%HAS_LOCAL_WHEELS%"=="1" (' in content
     assert "pip install --no-index --find-links=.wheels -r requirements.txt" in content
 
