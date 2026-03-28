@@ -37,32 +37,53 @@ and starts the application. No manual commands needed.
 ### Manual launch (any OS, for development)
 
 ```bash
-pip install --timeout 120 -e .
+pip install -r requirements.txt
+set PYTHONPATH=src
+python -m systemommy
+```
+
+Or install in editable mode (requires setuptools):
+
+```bash
+pip install --timeout 300 -e .
 python -m systemommy
 ```
 
 ## Troubleshooting
 
-### Installation timeouts
+### Console window closes instantly
 
-If `run.bat` or `pip install` fails with `ReadTimeoutError`, your internet
-connection may be slow. PySide6 is a large package (~570 MB). Try:
+The most common cause is that dependencies failed to install (see below).
+Delete the `venv` folder and run `run.bat` again — the script will show
+step-by-step progress and pause on any error so you can read the message.
+
+### Installation timeouts (`ReadTimeoutError`)
+
+PySide6 is a large package (~570 MB). On slow connections pip may time out.
+`run.bat` already sets a 300-second timeout, but if that is not enough:
 
 ```bash
-pip install --timeout 300 --retries 10 -r requirements.txt
+venv\Scripts\activate.bat
+set PIP_DEFAULT_TIMEOUT=600
+pip install PySide6
+pip install psutil
 ```
 
-Or install PySide6 separately first:
+Then run `run.bat` again — it will skip installation and launch the app.
+
+### `pip install -e .` fails on build dependencies
+
+Editable installs require downloading `setuptools`. If that times out,
+set the timeout **before** running pip:
 
 ```bash
-pip install --timeout 300 PySide6
-pip install -r requirements.txt
+set PIP_DEFAULT_TIMEOUT=600
+pip install -e .
 ```
 
 ### PySide6 version not found
 
-If pip cannot find the exact PySide6 version, make sure your Python is
-3.10+ and pip is up to date:
+Make sure your Python is 3.10+ and pip is up to date:
 
 ```bash
 python -m pip install --upgrade pip
