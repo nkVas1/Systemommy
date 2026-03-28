@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import time
-from unittest.mock import patch
+import pytest
 
 from systemommy.alerts.manager import AlertManager
 from systemommy.config import AppConfig
@@ -23,27 +22,28 @@ def _snapshot(
     )
 
 
+@pytest.mark.usefixtures("qtbot")
 class TestAlertManagerEvaluate:
     """Verify alert triggering logic."""
 
-    def test_no_alert_when_disabled(self, qtbot) -> None:  # type: ignore[no-untyped-def]
+    def test_no_alert_when_disabled(self) -> None:
         cfg = AppConfig()
         cfg.alerts.enabled = False
         mgr = AlertManager(cfg)
-        signals = []
+        signals: list[tuple[str, str]] = []
         mgr.alert_triggered.connect(lambda level, msg: signals.append((level, msg)))
         mgr.evaluate(_snapshot(cpu_temp=100.0))
         assert len(signals) == 0
 
-    def test_no_alert_below_thresholds(self, qtbot) -> None:  # type: ignore[no-untyped-def]
+    def test_no_alert_below_thresholds(self) -> None:
         cfg = AppConfig()
         mgr = AlertManager(cfg)
-        signals = []
+        signals: list[tuple[str, str]] = []
         mgr.alert_triggered.connect(lambda level, msg: signals.append((level, msg)))
         mgr.evaluate(_snapshot(cpu_temp=60.0, gpu_temp=60.0))
         assert len(signals) == 0
 
-    def test_cpu_critical_triggers_alert(self, qtbot) -> None:  # type: ignore[no-untyped-def]
+    def test_cpu_critical_triggers_alert(self) -> None:
         cfg = AppConfig()
         mgr = AlertManager(cfg)
         signals: list[tuple[str, str]] = []
@@ -53,7 +53,7 @@ class TestAlertManagerEvaluate:
         assert signals[0][0] == "critical"
         assert "CPU" in signals[0][1]
 
-    def test_gpu_warning_triggers_alert(self, qtbot) -> None:  # type: ignore[no-untyped-def]
+    def test_gpu_warning_triggers_alert(self) -> None:
         cfg = AppConfig()
         mgr = AlertManager(cfg)
         signals: list[tuple[str, str]] = []
@@ -63,7 +63,7 @@ class TestAlertManagerEvaluate:
         assert signals[0][0] == "warning"
         assert "GPU" in signals[0][1]
 
-    def test_cooldown_prevents_duplicate_alerts(self, qtbot) -> None:  # type: ignore[no-untyped-def]
+    def test_cooldown_prevents_duplicate_alerts(self) -> None:
         cfg = AppConfig()
         cfg.alerts.cooldown_s = 60
         mgr = AlertManager(cfg)
@@ -75,7 +75,7 @@ class TestAlertManagerEvaluate:
         mgr.evaluate(_snapshot(cpu_temp=95.0))
         assert len(signals) == 1
 
-    def test_none_temps_produce_no_alert(self, qtbot) -> None:  # type: ignore[no-untyped-def]
+    def test_none_temps_produce_no_alert(self) -> None:
         cfg = AppConfig()
         mgr = AlertManager(cfg)
         signals: list[tuple[str, str]] = []
