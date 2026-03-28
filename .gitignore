@@ -29,3 +29,4 @@ desktop.ini
 # Project
 *.log
 config.json
+.pytest_cache/

@@ -2,3 +2,4 @@
 
 __version__ = "1.0.0"
 __app_name__ = "Systemommy"
+__all__ = ["__version__", "__app_name__"]

@@ -13,14 +13,26 @@ if %errorlevel% neq 0 (
 if not exist "venv\Scripts\activate.bat" (
     echo [*] Creating virtual environment...
     python -m venv venv
+    if %errorlevel% neq 0 (
+        echo [ERROR] Failed to create virtual environment.
+        pause
+        exit /b 1
+    )
 )
 
 call venv\Scripts\activate.bat
 
 pip show PySide6 >nul 2>nul
 if %errorlevel% neq 0 (
-    echo [*] Installing dependencies...
-    pip install -r requirements.txt
+    echo [*] Installing dependencies (this may take a few minutes)...
+    pip install --timeout 120 --retries 5 -r requirements.txt
+    if %errorlevel% neq 0 (
+        echo [ERROR] Failed to install dependencies.
+        echo If you have a slow connection, try running manually:
+        echo   pip install --timeout 300 -r requirements.txt
+        pause
+        exit /b 1
+    )
 )
 
 echo [*] Starting Systemommy...

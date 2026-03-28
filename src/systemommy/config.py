@@ -18,6 +18,7 @@ from systemommy.constants import (
     OVERLAY_POSITION_X,
     OVERLAY_POSITION_Y,
     OVERLAY_UPDATE_INTERVAL_MS,
+    THRESHOLD_MINIMUM_GAP,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,13 @@ class AlertSettings:
     gpu_warning: int = GPU_TEMP_WARNING
     gpu_critical: int = GPU_TEMP_CRITICAL
     cooldown_s: int = ALERT_COOLDOWN_S
+
+    def __post_init__(self) -> None:
+        """Ensure warning thresholds are always below critical thresholds."""
+        if self.cpu_warning >= self.cpu_critical:
+            self.cpu_warning = self.cpu_critical - THRESHOLD_MINIMUM_GAP
+        if self.gpu_warning >= self.gpu_critical:
+            self.gpu_warning = self.gpu_critical - THRESHOLD_MINIMUM_GAP
 
 
 @dataclass
