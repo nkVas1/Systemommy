@@ -14,9 +14,11 @@ def _run_bat_text() -> str:
 def test_launcher_uses_local_wheel_cache_when_available() -> None:
     content = _run_bat_text()
     assert "set HAS_LOCAL_WHEELS=0" in content
+    assert "set HAS_PYSIDE6_WHEEL=0" in content
+    assert "set HAS_PSUTIL_WHEEL=0" in content
     assert '.wheels\\PySide6*.whl' in content
     assert '.wheels\\psutil*.whl' in content
-    assert "set HAS_LOCAL_WHEELS=1" in content
+    assert 'if "%HAS_PYSIDE6_WHEEL%"=="1" if "%HAS_PSUTIL_WHEEL%"=="1" set HAS_LOCAL_WHEELS=1' in content
     assert 'if "%HAS_LOCAL_WHEELS%"=="1" (' in content
     assert "pip install --no-index --find-links=.wheels -r requirements.txt" in content
 

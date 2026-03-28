@@ -63,8 +63,12 @@ if %errorlevel% neq 0 (
     echo       Please wait...
     echo.
     set HAS_LOCAL_WHEELS=0
+    set HAS_PYSIDE6_WHEEL=0
+    set HAS_PSUTIL_WHEEL=0
     REM Enable offline install only when BOTH required wheel families are present.
-    dir /b ".wheels\PySide6*.whl" >nul 2>nul && dir /b ".wheels\psutil*.whl" >nul 2>nul && set HAS_LOCAL_WHEELS=1
+    dir /b ".wheels\PySide6*.whl" >nul 2>nul && set HAS_PYSIDE6_WHEEL=1
+    dir /b ".wheels\psutil*.whl" >nul 2>nul && set HAS_PSUTIL_WHEEL=1
+    if "%HAS_PYSIDE6_WHEEL%"=="1" if "%HAS_PSUTIL_WHEEL%"=="1" set HAS_LOCAL_WHEELS=1
     if "%HAS_LOCAL_WHEELS%"=="1" (
         echo       Found local wheel cache: .wheels
         echo       Installing offline from local files...

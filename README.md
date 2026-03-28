@@ -61,7 +61,8 @@ step-by-step progress and pause on any error so you can read the message.
 
 PySide6 is a large package (~570 MB). On slow connections pip may time out.
 `run.bat` uses stable retry/timeout defaults and automatically installs from
-`.wheels` when that folder exists. For the most reliable setup:
+`.wheels` when required cached wheels are available (`PySide6` and `psutil`).
+For the most reliable setup:
 
 ```bash
 venv\Scripts\activate.bat
