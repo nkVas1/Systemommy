@@ -60,16 +60,16 @@ step-by-step progress and pause on any error so you can read the message.
 ### Installation timeouts (`ReadTimeoutError`)
 
 PySide6 is a large package (~570 MB). On slow connections pip may time out.
-`run.bat` already sets a 300-second timeout, but if that is not enough:
+`run.bat` uses stable retry/timeout defaults and automatically installs from
+`.wheels` when that folder exists. For the most reliable setup:
 
 ```bash
 venv\Scripts\activate.bat
-set PIP_DEFAULT_TIMEOUT=600
-pip install PySide6
-pip install psutil
+pip download --dest .wheels -r requirements.txt
+pip install --no-index --find-links=.wheels -r requirements.txt
 ```
 
-Then run `run.bat` again — it will skip installation and launch the app.
+Then run `run.bat` again — it will install from local wheels and launch the app.
 
 ### `pip install -e .` fails on build dependencies
 

@@ -8,11 +8,12 @@ echo        Systemommy — Hardware Monitor
 echo ============================================
 echo.
 
-REM --- Generous pip timeouts for slow connections ---
+REM --- Robust pip settings for unstable connections ---
 REM PIP_DEFAULT_TIMEOUT affects ALL pip operations, including
 REM internal subprocesses that install build dependencies.
-set PIP_DEFAULT_TIMEOUT=300
-set PIP_RETRIES=10
+set PIP_DEFAULT_TIMEOUT=180
+set PIP_RETRIES=4
+set PIP_DISABLE_PIP_VERSION_CHECK=1
 
 REM --- PYTHONPATH lets Python find the package in src/ ---
 set PYTHONPATH=%~dp0src
@@ -60,8 +61,13 @@ if %errorlevel% neq 0 (
     echo       PySide6 is ~570 MB — this may take several minutes.
     echo       Please wait...
     echo.
-    python -m pip install --upgrade pip
-    pip install -r requirements.txt
+    if exist ".wheels\*" (
+        echo       Found local wheel cache: .wheels
+        echo       Installing offline from local files...
+        pip install --no-index --find-links=.wheels -r requirements.txt
+    ) else (
+        pip install --prefer-binary --only-binary=:all: --timeout %PIP_DEFAULT_TIMEOUT% --retries %PIP_RETRIES% -r requirements.txt
+    )
     if %errorlevel% neq 0 (
         echo.
         echo [ERROR] Failed to install dependencies.
@@ -70,12 +76,11 @@ if %errorlevel% neq 0 (
         echo   - Slow or unstable internet connection
         echo   - PyPI server temporarily unavailable
         echo.
-        echo Try installing manually:
+        echo Fast recovery (download once, then install offline):
         echo   1. Open Command Prompt in this folder
         echo   2. venv\Scripts\activate.bat
-        echo   3. set PIP_DEFAULT_TIMEOUT=600
-        echo   4. pip install PySide6 psutil
-        echo   5. Run this script again
+        echo   3. pip download --dest .wheels -r requirements.txt
+        echo   4. Run this script again
         goto :fail
     )
     echo.
