@@ -61,13 +61,16 @@ if %errorlevel% neq 0 (
     echo       PySide6 is ~570 MB — this may take several minutes.
     echo       Please wait...
     echo.
-    dir /b ".wheels\*.whl" >nul 2>nul
+    dir /b ".wheels\PySide6*.whl" >nul 2>nul
+    if %errorlevel% equ 0 (
+        dir /b ".wheels\psutil*.whl" >nul 2>nul
+    )
     if %errorlevel% equ 0 (
         echo       Found local wheel cache: .wheels
         echo       Installing offline from local files...
         pip install --no-index --find-links=.wheels -r requirements.txt
     ) else (
-        pip install --prefer-binary --retries %PIP_RETRIES% -r requirements.txt
+        pip install --prefer-binary -r requirements.txt
     )
     if %errorlevel% neq 0 (
         echo.
