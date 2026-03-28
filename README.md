@@ -22,8 +22,9 @@ throttle performance to protect your hardware.
 
 ### Requirements
 
-- **Windows 11** (or 10)
+- **Windows 7 / 8 / 10 / 11**
 - **Python 3.10+** — [python.org/downloads](https://www.python.org/downloads/)
+  - During installation check **"Add Python to PATH"**
 
 ### Launch
 
@@ -31,21 +32,24 @@ throttle performance to protect your hardware.
 run.bat
 ```
 
-The launcher creates a virtual environment, installs dependencies automatically,
-and starts the application. No manual commands needed.
+That's it. The launcher will:
+1. Find Python on your system (supports `py` launcher, `python`, `python3`)
+2. Create a virtual environment
+3. Upgrade pip and install all dependencies automatically
+4. Start Systemommy
+
+### Launcher Options
+
+| Flag | Description |
+|------|-------------|
+| `run.bat --force` | Delete virtual environment and reinstall everything |
+| `run.bat --console` | Launch with a visible console window for diagnostics |
+| `run.bat --help` | Show all available options |
 
 ### Manual launch (any OS, for development)
 
 ```bash
-pip install -r requirements.txt
-set PYTHONPATH=src
-python -m systemommy
-```
-
-Or install in editable mode (requires setuptools):
-
-```bash
-pip install --timeout 300 -e .
+pip install -e .
 python -m systemommy
 ```
 
@@ -53,41 +57,43 @@ python -m systemommy
 
 ### Console window closes instantly
 
-The most common cause is that dependencies failed to install (see below).
-Delete the `venv` folder and run `run.bat` again — the script will show
-step-by-step progress and pause on any error so you can read the message.
+Delete the `venv` folder and run `run.bat` again — the script shows step-by-step
+progress and pauses on any error so you can read the message.
 
-### Installation timeouts (`ReadTimeoutError`)
+Or run with diagnostics:
+
+```
+run.bat --console
+```
+
+### Something went wrong — full reinstall
+
+```
+run.bat --force
+```
+
+This deletes the virtual environment and installs everything from scratch.
+
+### Installation timeouts on slow connections
 
 PySide6 is a large package (~570 MB). On slow connections pip may time out.
-`run.bat` uses stable retry/timeout defaults and automatically installs from
-`.wheels` when required cached wheels are available (`PySide6` and `psutil`).
-For the most reliable setup:
+Pre-download the packages on a fast connection:
 
 ```bash
+python -m venv venv
 venv\Scripts\activate.bat
-pip download --dest .wheels -r requirements.txt
+pip download --dest .wheels PySide6 psutil
 ```
 
-Then run `run.bat` again — it will install from local wheels and launch the app.
-
-### `pip install -e .` fails on build dependencies
-
-Editable installs require downloading `setuptools`. If that times out,
-set the timeout **before** running pip:
-
-```bash
-set PIP_DEFAULT_TIMEOUT=600
-pip install -e .
-```
+Then run `run.bat` — it detects the `.wheels` folder and installs offline.
 
 ### PySide6 version not found
 
-Make sure your Python is 3.10+ and pip is up to date:
+Make sure Python is 3.10+ and pip is up to date:
 
 ```bash
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ## Architecture

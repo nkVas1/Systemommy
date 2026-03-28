@@ -11,22 +11,48 @@ def _run_bat_text() -> str:
     )
 
 
-def test_launcher_uses_local_wheel_cache_when_available() -> None:
+def test_launcher_supports_offline_wheel_cache() -> None:
+    """Launcher must detect .wheels/ and install from it when available."""
     content = _run_bat_text()
-    assert "set HAS_LOCAL_WHEELS=0" in content
-    assert "set HAS_PYSIDE6_WHEEL=0" in content
-    assert "set HAS_PSUTIL_WHEEL=0" in content
     assert ".wheels" in content
     assert "PySide6*.whl" in content
     assert "psutil*.whl" in content
-    assert 'if "%HAS_PYSIDE6_WHEEL%"=="1"' in content
-    assert 'if "%HAS_PSUTIL_WHEEL%"=="1"' in content
-    assert "set HAS_LOCAL_WHEELS=1" in content
-    assert 'if "%HAS_LOCAL_WHEELS%"=="1" (' in content
-    assert "pip install --no-index --find-links=.wheels -r requirements.txt" in content
+    assert "--no-index" in content
+    assert "--find-links" in content
 
 
-def test_launcher_does_not_force_pip_upgrade_on_first_run() -> None:
+def test_launcher_upgrades_pip_before_install() -> None:
+    """Pip must be upgraded to avoid PEP 660 / wheel compatibility issues."""
     content = _run_bat_text()
-    assert "python -m pip install --upgrade pip" not in content
-    assert "pip install --prefer-binary -r requirements.txt" in content
+    assert "pip install --upgrade pip" in content
+
+
+def test_launcher_uses_editable_install() -> None:
+    """Package must be installed via pip install -e . for proper imports."""
+    content = _run_bat_text()
+    assert "pip install" in content
+    assert "-e ." in content
+
+
+def test_launcher_supports_force_flag() -> None:
+    """--force flag must be available for full reinstall."""
+    content = _run_bat_text()
+    assert "--force" in content
+
+
+def test_launcher_supports_console_flag() -> None:
+    """--console flag must be available for diagnostic launch."""
+    content = _run_bat_text()
+    assert "--console" in content
+
+
+def test_launcher_checks_python_version() -> None:
+    """Launcher must verify Python >= 3.10."""
+    content = _run_bat_text()
+    assert "3,10" in content or "3, 10" in content
+
+
+def test_launcher_detects_broken_venv() -> None:
+    """Launcher must detect and recreate corrupted virtual environments."""
+    content = _run_bat_text()
+    assert "corrupted" in content.lower() or "broken" in content.lower()
