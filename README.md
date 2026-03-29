@@ -83,7 +83,7 @@ Pre-download the packages on a fast connection:
 ```bash
 python -m venv venv
 venv\Scripts\activate.bat
-pip download --dest .wheels PySide6 psutil
+pip download --dest .wheels -r requirements.txt
 ```
 
 Then run `run.bat` — it detects the `.wheels` folder and installs offline.

@@ -198,7 +198,8 @@ The launcher is designed for a zero-friction experience on Windows 7–11:
 5. **Sets `PYTHONPATH`** — points to `src/` so Python can find the `systemommy`
    package without a full package install.
 6. **Offline `.wheels` cache** — detects pre-downloaded wheels and installs
-   from them when both `PySide6*.whl` and `psutil*.whl` are present.
+   from them when both `PySide6*.whl` and `psutil*.whl` are present. Falls
+   back to online PyPI install automatically if local cache is incomplete.
 7. **Launches with `pythonw`** — no console window cluttering the desktop.
 
 ### Launcher flags
