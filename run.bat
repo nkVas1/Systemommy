@@ -185,6 +185,11 @@ if "!NEEDS_INSTALL!"=="1" (
     if "!USE_CACHE!"=="1" (
         echo        Installing from local cache: .wheels\
         pip install --no-index --find-links=.wheels -r requirements.txt
+        if !errorlevel! neq 0 (
+            echo.
+            echo        [note] Offline install failed — falling back to PyPI...
+            pip install --prefer-binary -r requirements.txt
+        )
     ) else (
         echo        Downloading from PyPI...
         pip install --prefer-binary -r requirements.txt
@@ -204,7 +209,7 @@ if "!NEEDS_INSTALL!"=="1" (
         echo          2. run.bat --force   (full reinstall)
         echo          3. Pre-download packages for offline install:
         echo               venv\Scripts\activate.bat
-        echo               pip download --dest .wheels PySide6 psutil
+        echo               pip download --dest .wheels -r requirements.txt
         echo               run.bat
         goto :fail
     )
@@ -262,7 +267,7 @@ echo   Offline install (for slow or no internet):
 echo     1. On a machine with internet, run:
 echo          python -m venv venv
 echo          venv\Scripts\activate.bat
-echo          pip download --dest .wheels PySide6 psutil
+echo          pip download --dest .wheels -r requirements.txt
 echo     2. Copy the .wheels folder into this directory.
 echo     3. run.bat
 echo.
