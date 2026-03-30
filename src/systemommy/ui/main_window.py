@@ -31,6 +31,7 @@ from systemommy.constants import (
     COLOR_RED,
     COLOR_TEXT_DIM,
 )
+from systemommy.hardware.info import CpuInfo, GpuInfo, detect_cpu_info, detect_gpu_info
 from systemommy.hardware.monitor import HardwareSnapshot
 
 
@@ -64,6 +65,50 @@ class _DashboardTab(_ScanlineWidget):
         title.setProperty("role", "heading")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
+
+        # Hardware info group
+        hw_group = QGroupBox("» Hardware")
+        hw_lay = QFormLayout(hw_group)
+        self._cpu_info: CpuInfo | None = None
+        self._gpu_info: GpuInfo | None = None
+        try:
+            self._cpu_info = detect_cpu_info()
+            self._gpu_info = detect_gpu_info()
+        except Exception:  # noqa: BLE001
+            pass
+
+        cpu_model = self._cpu_info.model if self._cpu_info else "Detecting…"
+        cpu_cores = (
+            f"{self._cpu_info.physical_cores}C / {self._cpu_info.logical_cores}T"
+            if self._cpu_info
+            else "—"
+        )
+        cpu_freq = (
+            f"{self._cpu_info.max_frequency_mhz:.0f} MHz"
+            if self._cpu_info and self._cpu_info.max_frequency_mhz > 0
+            else "—"
+        )
+        gpu_name_text = self._gpu_info.name if self._gpu_info else "Detecting…"
+
+        self.hw_cpu_model_label = QLabel(cpu_model)
+        self.hw_cpu_model_label.setStyleSheet(f"color: {COLOR_TEXT_DIM};")
+        self.hw_cpu_model_label.setWordWrap(True)
+        hw_lay.addRow("CPU:", self.hw_cpu_model_label)
+
+        self.hw_cpu_cores_label = QLabel(cpu_cores)
+        self.hw_cpu_cores_label.setStyleSheet(f"color: {COLOR_TEXT_DIM};")
+        hw_lay.addRow("Cores:", self.hw_cpu_cores_label)
+
+        self.hw_cpu_freq_label = QLabel(cpu_freq)
+        self.hw_cpu_freq_label.setStyleSheet(f"color: {COLOR_TEXT_DIM};")
+        hw_lay.addRow("Max freq:", self.hw_cpu_freq_label)
+
+        self.hw_gpu_name_label = QLabel(gpu_name_text)
+        self.hw_gpu_name_label.setStyleSheet(f"color: {COLOR_TEXT_DIM};")
+        self.hw_gpu_name_label.setWordWrap(True)
+        hw_lay.addRow("GPU:", self.hw_gpu_name_label)
+
+        layout.addWidget(hw_group)
 
         # CPU group
         cpu_group = QGroupBox("» CPU")
@@ -254,10 +299,18 @@ class _AlertsTab(_ScanlineWidget):
         form = QFormLayout(group)
 
         self.enabled_cb = QCheckBox("Enable alerts")
+        self.enabled_cb.setToolTip(
+            "Enable temperature monitoring alerts.\n"
+            "Alerts are shown in the status bar and optionally play a sound."
+        )
         self.enabled_cb.setChecked(config.alerts.enabled)
         form.addRow(self.enabled_cb)
 
         self.sound_cb = QCheckBox("Play alert sound")
+        self.sound_cb.setToolTip(
+            "Play a system alert sound when temperature thresholds\n"
+            "are exceeded. Limited to a few plays per alert cycle."
+        )
         self.sound_cb.setChecked(config.alerts.sound_enabled)
         form.addRow(self.sound_cb)
 
@@ -266,12 +319,20 @@ class _AlertsTab(_ScanlineWidget):
         self.cpu_warn_spin.setRange(50, 110)
         self.cpu_warn_spin.setSuffix(" °C")
         self.cpu_warn_spin.setValue(config.alerts.cpu_warning)
+        self.cpu_warn_spin.setToolTip(
+            "Temperature at which a CPU warning alert is triggered.\n"
+            "Should be below the critical threshold."
+        )
         form.addRow("CPU warning:", self.cpu_warn_spin)
 
         self.cpu_crit_spin = QSpinBox()
         self.cpu_crit_spin.setRange(50, 120)
         self.cpu_crit_spin.setSuffix(" °C")
         self.cpu_crit_spin.setValue(config.alerts.cpu_critical)
+        self.cpu_crit_spin.setToolTip(
+            "Temperature at which a CPU critical alert is triggered.\n"
+            "Thermal correction (if enabled) activates at this level."
+        )
         form.addRow("CPU critical:", self.cpu_crit_spin)
 
         # GPU thresholds
@@ -279,12 +340,20 @@ class _AlertsTab(_ScanlineWidget):
         self.gpu_warn_spin.setRange(50, 110)
         self.gpu_warn_spin.setSuffix(" °C")
         self.gpu_warn_spin.setValue(config.alerts.gpu_warning)
+        self.gpu_warn_spin.setToolTip(
+            "Temperature at which a GPU warning alert is triggered.\n"
+            "Should be below the critical threshold."
+        )
         form.addRow("GPU warning:", self.gpu_warn_spin)
 
         self.gpu_crit_spin = QSpinBox()
         self.gpu_crit_spin.setRange(50, 120)
         self.gpu_crit_spin.setSuffix(" °C")
         self.gpu_crit_spin.setValue(config.alerts.gpu_critical)
+        self.gpu_crit_spin.setToolTip(
+            "Temperature at which a GPU critical alert is triggered.\n"
+            "Thermal correction (if enabled) activates at this level."
+        )
         form.addRow("GPU critical:", self.gpu_crit_spin)
 
         # Cooldown
@@ -292,6 +361,10 @@ class _AlertsTab(_ScanlineWidget):
         self.cooldown_spin.setRange(10, 600)
         self.cooldown_spin.setSuffix(" s")
         self.cooldown_spin.setValue(config.alerts.cooldown_s)
+        self.cooldown_spin.setToolTip(
+            "Minimum time between consecutive alerts (in seconds).\n"
+            "Prevents alert spam when temperatures are consistently high."
+        )
         form.addRow("Alert cooldown:", self.cooldown_spin)
 
         layout.addWidget(group)
@@ -341,21 +414,53 @@ class _ThermalTab(_ScanlineWidget):
         info = QLabel(
             "When enabled, Systemommy can automatically reduce CPU/GPU\n"
             "performance to lower dangerous temperatures. All changes\n"
-            "are reversible and restored when temps return to normal."
+            "are reversible and restored when temps return to normal.\n\n"
+            "• CPU: lowers the maximum processor boost clock (via\n"
+            "  Windows power settings) — base clock is not affected.\n"
+            "• GPU: lowers the firmware power limit (via NVML) — the\n"
+            "  GPU throttles safely within manufacturer-allowed range.\n\n"
+            "These measures cannot damage hardware — they use the same\n"
+            "mechanisms that Windows and GPU firmware use internally."
         )
         info.setStyleSheet(f"color: {COLOR_PURPLE}; font-size: 11px;")
         info.setWordWrap(True)
         form.addRow(info)
 
         self.auto_cb = QCheckBox("Enable automatic thermal correction")
+        self.auto_cb.setToolTip(
+            "When checked, Systemommy will automatically apply safe throttling\n"
+            "if temperatures reach the critical threshold. All changes are\n"
+            "reversed when temperatures return to normal."
+        )
         self.auto_cb.setChecked(config.thermal.auto_correct_enabled)
         form.addRow(self.auto_cb)
 
         self.ask_cb = QCheckBox("Ask permission before applying")
+        self.ask_cb.setToolTip(
+            "When checked, a confirmation dialog will appear before any\n"
+            "thermal correction is applied. If unchecked, corrections\n"
+            "are applied automatically when temperatures are critical."
+        )
         self.ask_cb.setChecked(config.thermal.ask_before_correct)
         form.addRow(self.ask_cb)
 
         layout.addWidget(group)
+
+        # Safety info group
+        safety_group = QGroupBox("» Safety Information")
+        safety_lay = QVBoxLayout(safety_group)
+        safety_label = QLabel(
+            "✓ All corrections stay within manufacturer-specified limits.\n"
+            "✓ The OS and hardware thermal protections remain active.\n"
+            "✓ Corrections are automatically reversed when temps normalise.\n"
+            "✓ No voltage, BIOS, or permanent hardware changes are made.\n"
+            "✓ If the app closes unexpectedly, changes persist only until\n"
+            "   the next reboot or manual restoration."
+        )
+        safety_label.setStyleSheet(f"color: {COLOR_GREEN}; font-size: 11px;")
+        safety_label.setWordWrap(True)
+        safety_lay.addWidget(safety_label)
+        layout.addWidget(safety_group)
 
         # Status group
         status_group = QGroupBox("» Correction Status")

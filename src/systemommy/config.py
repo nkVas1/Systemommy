@@ -91,11 +91,17 @@ class AppConfig:
 
     @classmethod
     def load(cls, config_dir: Path | None = None) -> "AppConfig":
-        """Load configuration from disk, returning defaults on any error."""
+        """Load configuration from disk, returning defaults on any error.
+
+        When loading for the first time (no saved config), auto-detects
+        hardware and sets thresholds appropriate for the detected CPU/GPU.
+        """
         path = cls.config_path(config_dir)
         if not path.exists():
-            logger.info("No config found at %s — using defaults.", path)
-            return cls()
+            logger.info("No config found at %s — using auto-detected defaults.", path)
+            cfg = cls()
+            cfg._apply_hardware_thresholds()
+            return cfg
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
             return cls(
@@ -108,6 +114,29 @@ class AppConfig:
         except Exception:
             logger.exception("Failed to load config from %s — using defaults.", path)
             return cls()
+
+    def _apply_hardware_thresholds(self) -> None:
+        """Best-effort auto-detection of hardware-appropriate thresholds."""
+        try:
+            from systemommy.hardware.info import recommended_thresholds
+
+            rec = recommended_thresholds()
+            self.alerts.cpu_warning = rec.cpu_warning
+            self.alerts.cpu_critical = rec.cpu_critical
+            self.alerts.gpu_warning = rec.gpu_warning
+            self.alerts.gpu_critical = rec.gpu_critical
+            logger.info(
+                "Auto-detected thresholds: CPU %d/%d °C, GPU %d/%d °C.",
+                rec.cpu_warning,
+                rec.cpu_critical,
+                rec.gpu_warning,
+                rec.gpu_critical,
+            )
+        except Exception:
+            logger.debug(
+                "Hardware threshold detection failed — using compiled defaults.",
+                exc_info=True,
+            )
 
     def save(self, config_dir: Path | None = None) -> None:
         """Persist current configuration to disk."""
