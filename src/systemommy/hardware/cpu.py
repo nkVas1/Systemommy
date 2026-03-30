@@ -22,7 +22,6 @@ import glob as _glob
 import logging
 import platform
 import subprocess
-import sys
 from dataclasses import dataclass
 
 import psutil

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import logging
 import sys
+from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
 from systemommy.alerts.manager import AlertManager
 from systemommy.config import AppConfig
 from systemommy.constants import APP_NAME, APP_VERSION, ORG_NAME
+from systemommy.hardware.history import TemperatureHistory
 from systemommy.hardware.monitor import HardwareMonitor, HardwareSnapshot
 from systemommy.overlay.widget import OverlayWidget
 from systemommy.ui.main_window import MainWindow
@@ -18,12 +20,23 @@ from systemommy.ui.tray import SystemTray
 
 logger = logging.getLogger(__name__)
 
+_LOG_DIR = Path.home() / ".systemommy"
+_LOG_FILE = _LOG_DIR / "systemommy.log"
+
 
 def _setup_logging() -> None:
+    _LOG_DIR.mkdir(parents=True, exist_ok=True)
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    try:
+        file_handler = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+        handlers.append(file_handler)
+    except OSError:
+        pass  # Non-fatal — continue with console only
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
+        handlers=handlers,
     )
 
 
@@ -42,12 +55,13 @@ class SystemommyApp:
         self._qt_app.setQuitOnLastWindowClosed(False)
 
         # Components
+        self._history = TemperatureHistory()
         self._monitor = HardwareMonitor(
             interval_ms=self._config.overlay.update_interval_ms
         )
         self._alert_mgr = AlertManager(self._config)
         self._overlay = OverlayWidget(self._config)
-        self._window = MainWindow(self._config)
+        self._window = MainWindow(self._config, self._history)
         self._tray = SystemTray()
 
         self._connect_signals()
@@ -77,6 +91,10 @@ class SystemommyApp:
     # ------------------------------------------------------------------
 
     def _on_reading(self, snapshot: HardwareSnapshot) -> None:
+        self._history.record(
+            cpu_temp=snapshot.cpu.temperature,
+            gpu_temp=snapshot.gpu.temperature,
+        )
         self._overlay.update_reading(snapshot)
         self._window.update_reading(snapshot)
         self._alert_mgr.evaluate(snapshot)
