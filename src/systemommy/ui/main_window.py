@@ -844,7 +844,7 @@ class MainWindow(QMainWindow):
     def __init__(self, config: AppConfig, history: TemperatureHistory | None = None) -> None:
         super().__init__()
         self._config = config
-        self._history = history or TemperatureHistory()
+        self._history = history if history is not None else TemperatureHistory()
 
         self.setWindowTitle(f"{APP_NAME} — Settings")
         self.setMinimumSize(480, 560)
@@ -882,6 +882,9 @@ class MainWindow(QMainWindow):
         self.alerts_tab.changed.connect(self._on_settings_changed)
         self.thermal_tab.changed.connect(self._on_settings_changed)
 
+        # Refresh metrics graph when the tab becomes visible
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+
     # ------------------------------------------------------------------
     # Public
     # ------------------------------------------------------------------
@@ -917,3 +920,8 @@ class MainWindow(QMainWindow):
     def _on_settings_changed(self) -> None:
         self._config.save()
         self.config_changed.emit()
+
+    def _on_tab_changed(self, index: int) -> None:
+        """Refresh the metrics graph immediately when its tab is selected."""
+        if self.tabs.widget(index) is self.metrics_tab:
+            self.metrics_tab.update_graph()

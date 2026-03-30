@@ -82,3 +82,19 @@ class TestTemperatureHistory:
         assert len(pts) == 1
         assert pts[0].cpu_temp is None
         assert pts[0].gpu_temp is None
+
+    def test_empty_history_is_truthy(self) -> None:
+        """An empty TemperatureHistory must evaluate to True.
+
+        Without ``__bool__`` returning True, code like
+        ``history or TemperatureHistory()`` silently creates a new
+        disconnected instance when the original is empty.
+        """
+        h = TemperatureHistory()
+        assert len(h) == 0
+        assert bool(h) is True
+
+    def test_nonempty_history_is_truthy(self) -> None:
+        h = TemperatureHistory()
+        h.record(cpu_temp=50.0, gpu_temp=55.0)
+        assert bool(h) is True

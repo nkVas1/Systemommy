@@ -10,12 +10,16 @@ from systemommy.hardware.cpu import (
     CpuReading,
     _read_temperature_psutil,
     _read_temperature_sysfs,
+    _read_temperature_ohm_ps,
+    _read_temperature_lhwm_ps,
     read_cpu,
 )
 from systemommy.hardware.gpu import (
     GpuReading,
     _read_nvidia_smi,
     _read_sysfs_gpu,
+    _read_ohm_gpu_ps,
+    _read_lhwm_gpu_ps,
     read_gpu,
 )
 
@@ -139,3 +143,111 @@ class TestReadGpuFallbackChain:
         """On systems without GPU sensors, temperature is None — not an error."""
         reading = read_gpu()
         assert reading.temperature is None or isinstance(reading.temperature, float)
+
+
+class TestOhmPsFallback:
+    """Verify PowerShell-based OHM CPU temperature reading."""
+
+    def test_returns_none_on_non_windows(self) -> None:
+        with patch("systemommy.hardware.cpu._IS_WINDOWS", False):
+            assert _read_temperature_ohm_ps() is None
+
+    def test_parses_valid_output(self) -> None:
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "72.5\n68.3\n"
+
+        with (
+            patch("systemommy.hardware.cpu._IS_WINDOWS", True),
+            patch("systemommy.hardware.cpu.subprocess.run", return_value=mock_result),
+        ):
+            temp = _read_temperature_ohm_ps()
+            assert temp is not None
+            assert temp == 72.5
+
+    def test_returns_none_on_failure(self) -> None:
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+
+        with (
+            patch("systemommy.hardware.cpu._IS_WINDOWS", True),
+            patch("systemommy.hardware.cpu.subprocess.run", return_value=mock_result),
+        ):
+            assert _read_temperature_ohm_ps() is None
+
+
+class TestLhwmPsFallback:
+    """Verify PowerShell-based LHWM CPU temperature reading."""
+
+    def test_returns_none_on_non_windows(self) -> None:
+        with patch("systemommy.hardware.cpu._IS_WINDOWS", False):
+            assert _read_temperature_lhwm_ps() is None
+
+    def test_parses_valid_output(self) -> None:
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "85.0\n"
+
+        with (
+            patch("systemommy.hardware.cpu._IS_WINDOWS", True),
+            patch("systemommy.hardware.cpu.subprocess.run", return_value=mock_result),
+        ):
+            temp = _read_temperature_lhwm_ps()
+            assert temp is not None
+            assert temp == 85.0
+
+
+class TestGpuOhmPsFallback:
+    """Verify PowerShell-based OHM GPU temperature reading."""
+
+    def test_returns_none_on_non_windows(self) -> None:
+        with patch("systemommy.hardware.gpu._IS_WINDOWS", False):
+            assert _read_ohm_gpu_ps() is None
+
+    def test_parses_valid_output(self) -> None:
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "65.0\n"
+
+        with (
+            patch("systemommy.hardware.gpu._IS_WINDOWS", True),
+            patch("systemommy.hardware.gpu.subprocess.run", return_value=mock_result),
+        ):
+            reading = _read_ohm_gpu_ps()
+            assert reading is not None
+            assert reading.temperature == 65.0
+            assert reading.name == "GPU (OHM)"
+
+    def test_returns_none_on_failure(self) -> None:
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+
+        with (
+            patch("systemommy.hardware.gpu._IS_WINDOWS", True),
+            patch("systemommy.hardware.gpu.subprocess.run", return_value=mock_result),
+        ):
+            assert _read_ohm_gpu_ps() is None
+
+
+class TestGpuLhwmPsFallback:
+    """Verify PowerShell-based LHWM GPU temperature reading."""
+
+    def test_returns_none_on_non_windows(self) -> None:
+        with patch("systemommy.hardware.gpu._IS_WINDOWS", False):
+            assert _read_lhwm_gpu_ps() is None
+
+    def test_parses_valid_output(self) -> None:
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "78.5\n"
+
+        with (
+            patch("systemommy.hardware.gpu._IS_WINDOWS", True),
+            patch("systemommy.hardware.gpu.subprocess.run", return_value=mock_result),
+        ):
+            reading = _read_lhwm_gpu_ps()
+            assert reading is not None
+            assert reading.temperature == 78.5
+            assert reading.name == "GPU (LHWM)"

@@ -7,7 +7,14 @@ Uses a multi-level fallback chain:
   absent but NVIDIA drivers are installed.
 - **Linux sysfs / hwmon** — reads ``/sys/class/drm/card*/device/hwmon``
   for AMD / Intel GPUs.
-- **Open Hardware Monitor WMI** — Windows only, requires OHM running.
+- **Open Hardware Monitor WMI** — Windows only, requires OHM running and
+  the ``wmi`` Python package.
+- **LibreHardwareMonitor WMI** — Windows only, requires LHWM running and
+  the ``wmi`` Python package.
+- **Open Hardware Monitor (PowerShell)** — Windows only, requires OHM
+  running; does **not** need the ``wmi`` pip package.
+- **LibreHardwareMonitor (PowerShell)** — Windows only, requires LHWM
+  running; does **not** need the ``wmi`` pip package.
 """
 
 from __future__ import annotations
@@ -184,11 +191,147 @@ def _read_ohm_gpu() -> GpuReading | None:
     return None
 
 
+def _read_lhwm_gpu() -> GpuReading | None:
+    r"""Read GPU temperature via LibreHardwareMonitor WMI.
+
+    Same approach as :func:`_read_ohm_gpu` but using the
+    ``root\LibreHardwareMonitor`` namespace.
+    """
+    if not _IS_WINDOWS:
+        return None
+    try:
+        import wmi  # type: ignore[import-untyped]
+
+        w = wmi.WMI(namespace=r"root\LibreHardwareMonitor")
+        sensors = w.Sensor()
+        gpu_temps: list[float] = []
+        gpu_name = "GPU"
+        for sensor in sensors:
+            if sensor.SensorType == "Temperature" and "gpu" in sensor.Name.lower():
+                gpu_temps.append(float(sensor.Value))
+            if sensor.SensorType == "Clock" and "gpu" in sensor.Name.lower():
+                gpu_name = sensor.Parent if hasattr(sensor, "Parent") else "GPU"
+        if gpu_temps:
+            return GpuReading(
+                temperature=round(max(gpu_temps), 1),
+                usage_percent=None,
+                name=str(gpu_name),
+            )
+    except Exception:  # noqa: BLE001
+        logger.debug("LHWM GPU read failed.", exc_info=True)
+    return None
+
+
+def _read_ohm_gpu_ps() -> GpuReading | None:
+    """Read GPU temperature via OHM WMI namespace using PowerShell.
+
+    Does **not** require the ``wmi`` Python package.
+    """
+    if not _IS_WINDOWS:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                (
+                    "Get-CimInstance -Namespace root/OpenHardwareMonitor"
+                    " -ClassName Sensor -ErrorAction Stop"
+                    " | Where-Object {"
+                    " $_.SensorType -eq 'Temperature' -and"
+                    " $_.Name -match 'gpu'"
+                    "} | Select-Object -ExpandProperty Value"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            creationflags=_SUBPROCESS_FLAGS,
+        )
+        if result.returncode != 0:
+            return None
+        values: list[float] = []
+        for line in result.stdout.strip().splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    val = float(line)
+                    if 0 < val < 150:
+                        values.append(val)
+                except ValueError:
+                    continue
+        if values:
+            return GpuReading(
+                temperature=round(max(values), 1),
+                usage_percent=None,
+                name="GPU (OHM)",
+            )
+    except Exception:  # noqa: BLE001
+        logger.debug("OHM PowerShell GPU read failed.", exc_info=True)
+    return None
+
+
+def _read_lhwm_gpu_ps() -> GpuReading | None:
+    """Read GPU temperature via LHWM WMI namespace using PowerShell.
+
+    Does **not** require the ``wmi`` Python package.
+    """
+    if not _IS_WINDOWS:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                (
+                    "Get-CimInstance -Namespace root/LibreHardwareMonitor"
+                    " -ClassName Sensor -ErrorAction Stop"
+                    " | Where-Object {"
+                    " $_.SensorType -eq 'Temperature' -and"
+                    " $_.Name -match 'gpu'"
+                    "} | Select-Object -ExpandProperty Value"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            creationflags=_SUBPROCESS_FLAGS,
+        )
+        if result.returncode != 0:
+            return None
+        values: list[float] = []
+        for line in result.stdout.strip().splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    val = float(line)
+                    if 0 < val < 150:
+                        values.append(val)
+                except ValueError:
+                    continue
+        if values:
+            return GpuReading(
+                temperature=round(max(values), 1),
+                usage_percent=None,
+                name="GPU (LHWM)",
+            )
+    except Exception:  # noqa: BLE001
+        logger.debug("LHWM PowerShell GPU read failed.", exc_info=True)
+    return None
+
+
 def read_gpu() -> GpuReading:
     """Return current GPU temperature and usage.
 
     Tries multiple sources in order of reliability:
-    NVML → nvidia-smi → sysfs (Linux) → OHM (Windows).
+    NVML → nvidia-smi → sysfs (Linux) → OHM (wmi) → LHWM (wmi) →
+    OHM (PowerShell) → LHWM (PowerShell).
     """
     reading = _read_nvml()
     if reading is not None:
@@ -203,6 +346,18 @@ def read_gpu() -> GpuReading:
         return reading
 
     reading = _read_ohm_gpu()
+    if reading is not None:
+        return reading
+
+    reading = _read_lhwm_gpu()
+    if reading is not None:
+        return reading
+
+    reading = _read_ohm_gpu_ps()
+    if reading is not None:
+        return reading
+
+    reading = _read_lhwm_gpu_ps()
     if reading is not None:
         return reading
 

@@ -68,6 +68,15 @@ class TemperatureHistory:
     def __len__(self) -> int:
         return len(self._data)
 
+    def __bool__(self) -> bool:
+        """A history instance is always truthy (even when empty).
+
+        Without this override, an empty history evaluates to ``False``
+        (because ``__len__`` returns ``0``), which can cause subtle bugs
+        when used with ``or`` expressions for default values.
+        """
+        return True
+
     def clear(self) -> None:
         """Discard all data and reset session start time."""
         self._data.clear()
