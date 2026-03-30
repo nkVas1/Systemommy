@@ -224,10 +224,10 @@ def _read_temperature_ohm() -> float | None:
 
 
 def _read_temperature_lhwm() -> float | None:
-    """Attempt to read CPU temperature via LibreHardwareMonitor WMI.
+    r"""Attempt to read CPU temperature via LibreHardwareMonitor WMI.
 
     LibreHardwareMonitor (LHWM) is the maintained successor to Open
-    Hardware Monitor and exposes the ``root\\LibreHardwareMonitor`` WMI
+    Hardware Monitor and exposes the ``root\LibreHardwareMonitor`` WMI
     namespace when running.
     """
     if not _IS_WINDOWS:

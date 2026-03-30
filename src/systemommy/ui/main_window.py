@@ -546,8 +546,7 @@ class _TemperatureGraphWidget(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._cpu_points: list[TemperaturePoint] = []
-        self._gpu_points: list[TemperaturePoint] = []
+        self._points: list[TemperaturePoint] = []
         self._show_cpu = True
         self._show_gpu = True
         self._min_temp = 20.0
@@ -562,8 +561,7 @@ class _TemperatureGraphWidget(QWidget):
         show_gpu: bool = True,
     ) -> None:
         """Update the graph data and trigger a repaint."""
-        self._cpu_points = points
-        self._gpu_points = points
+        self._points = points
         self._show_cpu = show_cpu
         self._show_gpu = show_gpu
         self._recalc_range(points)
@@ -629,7 +627,7 @@ class _TemperatureGraphWidget(QWidget):
             t += step
 
         # X-axis time labels
-        points = self._cpu_points or self._gpu_points
+        points = self._points
         if len(points) >= 2:
             t_start = points[0].timestamp
             t_end = points[-1].timestamp
