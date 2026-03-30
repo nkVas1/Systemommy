@@ -1,0 +1,11 @@
+Логи при запуске программы файлом run.bat: "Systemommy
+Hardware Monitor
+[1/4] Checking Python... Python 3.11.9
+[2/4] Virtual environment OK.
+[3/4] All packages are up to date.
+Systemommy v1.1.0
+[4/4] Launching Systemommy...
+Systemommy is running.
+Look for the green "S" icon in your system tray.
+[процесс завершил работу с кодом 0 (0x00000000)]
+Теперь вы можете закрыть этот терминал с помощью клавиш CTRL+D. Или нажмите клавишу ВВОД для перезапуска.".
