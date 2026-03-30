@@ -12,10 +12,12 @@ throttle performance to protect your hardware.
 ## Features
 
 - **Live overlay** — semi-transparent, click-through temperature display on top of all windows.
+- **Temperature graphs** — Metrics tab with line graphs (last 15/30 min or full session) and session statistics.
 - **Critical alerts** — sound and visual warnings when CPU or GPU temperatures exceed thresholds.
 - **Automatic thermal correction** — reversible CPU/GPU throttling when temps are dangerously high (with user permission).
 - **Settings UI** — tabbed, skeuomorphic hacker-themed interface for full customisation.
 - **System tray** — minimises to tray; double-click to open settings.
+- **File logging** — logs to `~/.systemommy/systemommy.log` for diagnostics.
 - **Single-file launch** — just run `run.bat` on Windows.
 
 ## Quick Start
@@ -97,8 +99,10 @@ src/systemommy/
 ├── config.py            # JSON settings persistence
 ├── constants.py         # Thresholds, colours, defaults
 ├── hardware/
-│   ├── cpu.py           # CPU temperature (psutil / WMI / OHM)
-│   ├── gpu.py           # GPU temperature (NVML / OHM)
+│   ├── cpu.py           # CPU temperature (psutil / OHM / LHWM / WMI)
+│   ├── gpu.py           # GPU temperature (NVML / nvidia-smi / sysfs / OHM)
+│   ├── history.py       # Temperature history for graphs
+│   ├── info.py          # Hardware detection & thresholds
 │   ├── monitor.py       # Polling orchestrator (Qt signals)
 │   └── thermal.py       # Reversible CPU/GPU throttling
 ├── overlay/
@@ -106,7 +110,7 @@ src/systemommy/
 ├── alerts/
 │   └── manager.py       # Threshold evaluation, sound, correction prompts
 └── ui/
-    ├── main_window.py   # Tabbed settings window
+    ├── main_window.py   # Tabbed settings (Dashboard, Overlay, Alerts, Thermal, Metrics)
     ├── theme.py         # QSS stylesheet (hacker / terminal theme)
     └── tray.py          # System tray icon
 ```
