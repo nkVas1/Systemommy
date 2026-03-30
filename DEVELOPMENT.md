@@ -24,15 +24,15 @@
 
 ## Tech Stack
 
-| Component        | Technology                              |
-|------------------|-----------------------------------------|
-| Language         | Python 3.10+                            |
-| UI Framework     | PySide6 (Qt 6)                          |
-| Hardware access  | psutil, WMI, NVML (pynvml), OHM        |
-| Configuration    | JSON (`~/.systemommy/config.json`)      |
-| Tests            | pytest + pytest-qt                      |
-| Entry point      | `python -m systemommy` / `run.bat`      |
-| Package layout   | `src/systemommy/` (src-layout)          |
+| Component        | Technology                                      |
+|------------------|-------------------------------------------------|
+| Language         | Python 3.10+                                    |
+| UI Framework     | PySide6 (Qt 6)                                  |
+| Hardware access  | psutil, WMI, NVML (pynvml), OHM, LHWM          |
+| Configuration    | JSON (`~/.systemommy/config.json`)              |
+| Tests            | pytest + pytest-qt                              |
+| Entry point      | `python -m systemommy` / `run.bat`              |
+| Package layout   | `src/systemommy/` (src-layout)                  |
 
 ---
 
@@ -47,8 +47,8 @@ src/systemommy/
 ├── constants.py         # Thresholds, colours, default values
 ├── hardware/
 │   ├── __init__.py      # Re-exports: CpuReading, GpuReading, HardwareMonitor, etc.
-│   ├── cpu.py           # CPU temp reading (psutil → OHM → LHWM → PowerShell → WMI)
-│   ├── gpu.py           # GPU temp reading (NVML → nvidia-smi → sysfs → OHM)
+│   ├── cpu.py           # CPU temp reading (psutil → sysfs → OHM → LHWM → OHM PS → LHWM PS → PowerShell → WMI)
+│   ├── gpu.py           # GPU temp reading (NVML → nvidia-smi → sysfs → OHM → LHWM → OHM PS → LHWM PS)
 │   ├── history.py       # TemperatureHistory — timestamped ring-buffer for graphs
 │   ├── info.py          # Hardware detection & threshold estimation
 │   ├── monitor.py       # QTimer-based polling, emits HardwareSnapshot via Signal
@@ -147,12 +147,13 @@ Test structure follows source structure:
 - `test_config.py` — config defaults, persistence, round-trip
 - `test_constants.py` — threshold ordering, colour format
 - `test_hardware.py` — data structure creation, immutability
-- `test_history.py` — temperature history recording, recent/full queries, ring-buffer
+- `test_history.py` — temperature history recording, recent/full queries, ring-buffer, truthiness
 - `test_thermal.py` — corrector initial state, no-op restore
 - `test_overlay.py` — `_temp_color` helper threshold logic
 - `test_alerts.py` — alert evaluation, cooldown, threshold validation
-- `test_fallbacks.py` — CPU/GPU temperature fallback chains
+- `test_fallbacks.py` — CPU/GPU temperature fallback chains (incl. OHM/LHWM PowerShell)
 - `test_info.py` — hardware detection, TjMax estimation, threshold calculation
+- `test_metrics_graph.py` — graph data flow, history sharing, tab-switch refresh
 - `test_launcher_script.py` — run.bat structure validation
 
 ---
@@ -166,6 +167,16 @@ Test structure follows source structure:
       `CREATE_NO_WINDOW` on Windows to prevent visible console flashing.
 - [x] **CPU temperature accuracy** — fallback chain reordered so OHM /
       LibreHardwareMonitor are tried before the unreliable MSAcpi WMI source.
+- [x] **Metrics graphs blank** — the graph widget never received data because
+      an empty `TemperatureHistory` was falsy (``__len__`` = 0), causing
+      ``history or TemperatureHistory()`` to create a disconnected instance.
+      Fixed with an explicit ``is not None`` check and a ``__bool__`` override.
+- [x] **Graph not refreshed on tab switch** — switching to the Metrics tab
+      now immediately refreshes the graph via ``currentChanged`` signal.
+- [x] **CPU temp fallback without wmi package** — added PowerShell-based
+      OHM and LHWM queries that work without the ``wmi`` pip package.
+- [x] **GPU LHWM fallback** — added LibreHardwareMonitor support for GPU
+      temperature reading (via ``wmi`` package and PowerShell subprocess).
 - [ ] **AMD GPU support** — currently only NVIDIA via NVML; add ROCm-SMI
       or ADL for AMD GPUs.
 - [ ] **Multi-GPU support** — current code reads only GPU index 0.

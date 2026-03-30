@@ -99,8 +99,8 @@ src/systemommy/
 ├── config.py            # JSON settings persistence
 ├── constants.py         # Thresholds, colours, defaults
 ├── hardware/
-│   ├── cpu.py           # CPU temperature (psutil / OHM / LHWM / WMI)
-│   ├── gpu.py           # GPU temperature (NVML / nvidia-smi / sysfs / OHM)
+│   ├── cpu.py           # CPU temperature (psutil / sysfs / OHM / LHWM / PowerShell / WMI)
+│   ├── gpu.py           # GPU temperature (NVML / nvidia-smi / sysfs / OHM / LHWM)
 │   ├── history.py       # Temperature history for graphs
 │   ├── info.py          # Hardware detection & thresholds
 │   ├── monitor.py       # Polling orchestrator (Qt signals)
