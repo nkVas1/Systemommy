@@ -74,8 +74,8 @@ def _is_cpu_sensor(sensor) -> bool:
     """Return *True* if *sensor* is a CPU temperature sensor.
 
     Checks both the sensor ``Name`` (against a broad keyword list) and the
-    ``Identifier`` property (which always contains ``/cpu/`` for processor
-    sensors in OHM / LHWM).
+    ``Identifier`` property (which contains ``cpu/`` for processor sensors
+    in OHM / LHWM, e.g. ``/amdcpu/0/…``, ``/intelcpu/0/…``).
     """
     name_lower = sensor.Name.lower() if hasattr(sensor, "Name") else ""
     if any(kw in name_lower for kw in _CPU_SENSOR_NAME_KEYWORDS):

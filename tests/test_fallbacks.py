@@ -333,3 +333,8 @@ class TestIsGpuSensor:
         assert not _is_gpu_sensor(
             self._make_sensor("CPU Package", "/intelcpu/0/temperature/0")
         )
+
+    def test_rejects_unrelated_sensor(self) -> None:
+        assert not _is_gpu_sensor(
+            self._make_sensor("System", "/lpc/it8688e/temperature/2")
+        )

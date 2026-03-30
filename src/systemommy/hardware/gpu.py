@@ -56,7 +56,7 @@ def _is_gpu_sensor(sensor) -> bool:
     """Return *True* if *sensor* is a GPU temperature sensor.
 
     Checks both the sensor ``Name`` (for ``"gpu"`` substring) and the
-    ``Identifier`` property (which contains ``/gpu/`` for GPU sensors in
+    ``Identifier`` property (which contains ``/gpu`` for GPU sensors in
     OHM / LHWM, e.g. ``/gpu-nvidia/0/temperature/0``).
     """
     name_lower = sensor.Name.lower() if hasattr(sensor, "Name") else ""
