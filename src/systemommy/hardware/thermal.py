@@ -39,6 +39,11 @@ logger = logging.getLogger(__name__)
 
 _IS_WINDOWS = platform.system() == "Windows"
 
+# Subprocess creation flag that prevents a visible console window on Windows.
+_SUBPROCESS_FLAGS: int = (
+    subprocess.CREATE_NO_WINDOW if _IS_WINDOWS else 0
+)
+
 # Maximum processor state will be set to this percentage during correction.
 # 80 % keeps the CPU well within safe thermal limits while still providing
 # reasonable performance for most workloads.
@@ -93,6 +98,7 @@ class ThermalCorrector:
                 capture_output=True,
                 text=True,
                 check=False,
+                creationflags=_SUBPROCESS_FLAGS,
             )
             if result.returncode == 0:
                 parts = result.stdout.strip().split()
@@ -114,11 +120,13 @@ class ThermalCorrector:
                 ],
                 capture_output=True,
                 check=False,
+                creationflags=_SUBPROCESS_FLAGS,
             )
             subprocess.run(
                 ["powercfg", "/setactive", "scheme_current"],
                 capture_output=True,
                 check=False,
+                creationflags=_SUBPROCESS_FLAGS,
             )
             self._cpu_corrected = True
             logger.info(
@@ -148,11 +156,13 @@ class ThermalCorrector:
                 ],
                 capture_output=True,
                 check=False,
+                creationflags=_SUBPROCESS_FLAGS,
             )
             subprocess.run(
                 ["powercfg", "/setactive", "scheme_current"],
                 capture_output=True,
                 check=False,
+                creationflags=_SUBPROCESS_FLAGS,
             )
             self._cpu_corrected = False
             logger.info("CPU settings restored (max processor state → 100%%).")

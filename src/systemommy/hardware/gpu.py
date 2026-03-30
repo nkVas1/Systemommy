@@ -23,6 +23,11 @@ logger = logging.getLogger(__name__)
 _IS_LINUX = platform.system() == "Linux"
 _IS_WINDOWS = platform.system() == "Windows"
 
+# Subprocess creation flag that prevents a visible console window on Windows.
+_SUBPROCESS_FLAGS: int = (
+    subprocess.CREATE_NO_WINDOW if _IS_WINDOWS else 0
+)
+
 
 @dataclass(frozen=True)
 class GpuReading:
@@ -75,6 +80,7 @@ def _read_nvidia_smi() -> GpuReading | None:
             text=True,
             timeout=5,
             check=False,
+            creationflags=_SUBPROCESS_FLAGS,
         )
         if result.returncode != 0:
             return None
