@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 _IS_LINUX = platform.system() == "Linux"
 _IS_WINDOWS = platform.system() == "Windows"
 
+# Subprocess creation flag that prevents a visible console window on Windows.
+_SUBPROCESS_FLAGS: int = (
+    subprocess.CREATE_NO_WINDOW if _IS_WINDOWS else 0
+)
+
 # ------------------------------------------------------------------
 # Data classes
 # ------------------------------------------------------------------
@@ -87,6 +92,7 @@ def _cpu_model_name() -> str:
                 text=True,
                 timeout=5,
                 check=False,
+                creationflags=_SUBPROCESS_FLAGS,
             )
             for line in result.stdout.splitlines():
                 if line.startswith("Name="):
@@ -148,6 +154,7 @@ def _gpu_name() -> str:
             text=True,
             timeout=5,
             check=False,
+            creationflags=_SUBPROCESS_FLAGS,
         )
         if result.returncode == 0:
             name = result.stdout.strip().splitlines()[0].strip()
@@ -165,6 +172,7 @@ def _gpu_name() -> str:
                 text=True,
                 timeout=5,
                 check=False,
+                creationflags=_SUBPROCESS_FLAGS,
             )
             for line in result.stdout.splitlines():
                 if line.startswith("Name="):

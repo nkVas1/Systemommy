@@ -118,6 +118,30 @@ QSpinBox:focus, QDoubleSpinBox:focus {{
     border-color: {COLOR_GREEN};
 }}
 
+/* ── Combo boxes ──────────────────────────────────────────── */
+QComboBox {{
+    background-color: {COLOR_BG_WIDGET};
+    color: {COLOR_TEXT};
+    border: 1px solid {COLOR_BORDER};
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-height: 24px;
+}}
+QComboBox:focus {{
+    border-color: {COLOR_GREEN};
+}}
+QComboBox::drop-down {{
+    border: none;
+    width: 20px;
+}}
+QComboBox QAbstractItemView {{
+    background: {COLOR_BG_PANEL};
+    color: {COLOR_TEXT};
+    border: 1px solid {COLOR_BORDER};
+    selection-background-color: rgba(57, 255, 20, 0.15);
+    selection-color: {COLOR_GREEN};
+}}
+
 /* ── Sliders ──────────────────────────────────────────────── */
 QSlider::groove:horizontal {{
     height: 4px;
@@ -164,6 +188,10 @@ QTabBar::tab:hover:!selected {{
 }}
 
 /* ── Scroll area ──────────────────────────────────────────── */
+QScrollArea {{
+    background: transparent;
+    border: none;
+}}
 QScrollBar:vertical {{
     width: 8px;
     background: {COLOR_BG_DARK};

@@ -2,6 +2,7 @@
 
 from systemommy.hardware.cpu import CpuReading
 from systemommy.hardware.gpu import GpuReading
+from systemommy.hardware.history import TemperatureHistory, TemperaturePoint
 from systemommy.hardware.info import (
     CpuInfo,
     GpuInfo,
@@ -21,6 +22,8 @@ __all__ = [
     "HardwareMonitor",
     "HardwareSnapshot",
     "RecommendedThresholds",
+    "TemperatureHistory",
+    "TemperaturePoint",
     "ThermalCorrector",
     "detect_cpu_info",
     "detect_gpu_info",

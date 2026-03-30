@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QPainter, QPaintEvent, QColor
+from PySide6.QtGui import QFont, QPainter, QPaintEvent, QColor, QPen, QPainterPath
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QStatusBar,
@@ -27,12 +30,16 @@ from systemommy.constants import (
     APP_NAME,
     APP_VERSION,
     COLOR_BG_DARK,
+    COLOR_BG_PANEL,
+    COLOR_BORDER,
     COLOR_GREEN,
     COLOR_GOLD,
     COLOR_PURPLE,
     COLOR_RED,
+    COLOR_TEXT,
     COLOR_TEXT_DIM,
 )
+from systemommy.hardware.history import TemperatureHistory, TemperaturePoint
 from systemommy.hardware.info import CpuInfo, GpuInfo, detect_cpu_info, detect_gpu_info
 from systemommy.hardware.monitor import HardwareSnapshot
 
@@ -409,26 +416,39 @@ class _ThermalTab(_ScanlineWidget):
     def __init__(self, config: AppConfig) -> None:
         super().__init__()
         self._config = config
-        layout = QVBoxLayout(self)
-        layout.setSpacing(12)
+
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setSpacing(10)
+        layout.setContentsMargins(6, 6, 6, 6)
 
         group = QGroupBox("» Thermal Correction")
-        form = QFormLayout(group)
+        group_lay = QVBoxLayout(group)
+        group_lay.setSpacing(8)
 
         info = QLabel(
-            "When enabled, Systemommy can automatically reduce CPU/GPU\n"
-            "performance to lower dangerous temperatures. All changes\n"
+            "When enabled, Systemommy can automatically reduce CPU/GPU "
+            "performance to lower dangerous temperatures. All changes "
             "are reversible and restored when temps return to normal.\n\n"
-            "• CPU: lowers the maximum processor boost clock (via\n"
-            "  Windows power settings) — base clock is not affected.\n"
-            "• GPU: lowers the firmware power limit (via NVML) — the\n"
-            "  GPU throttles safely within manufacturer-allowed range.\n\n"
-            "These measures cannot damage hardware — they use the same\n"
+            "• CPU: lowers the maximum processor boost clock (via "
+            "Windows power settings) — base clock is not affected.\n"
+            "• GPU: lowers the firmware power limit (via NVML) — the "
+            "GPU throttles safely within manufacturer-allowed range.\n\n"
+            "These measures cannot damage hardware — they use the same "
             "mechanisms that Windows and GPU firmware use internally."
         )
         info.setStyleSheet(f"color: {COLOR_PURPLE}; font-size: 11px;")
         info.setWordWrap(True)
-        form.addRow(info)
+        group_lay.addWidget(info)
 
         self.auto_cb = QCheckBox("Enable automatic thermal correction")
         self.auto_cb.setToolTip(
@@ -437,7 +457,7 @@ class _ThermalTab(_ScanlineWidget):
             "reversed when temperatures return to normal."
         )
         self.auto_cb.setChecked(config.thermal.auto_correct_enabled)
-        form.addRow(self.auto_cb)
+        group_lay.addWidget(self.auto_cb)
 
         self.ask_cb = QCheckBox("Ask permission before applying")
         self.ask_cb.setToolTip(
@@ -446,7 +466,7 @@ class _ThermalTab(_ScanlineWidget):
             "are applied automatically when temperatures are critical."
         )
         self.ask_cb.setChecked(config.thermal.ask_before_correct)
-        form.addRow(self.ask_cb)
+        group_lay.addWidget(self.ask_cb)
 
         layout.addWidget(group)
 
@@ -479,6 +499,9 @@ class _ThermalTab(_ScanlineWidget):
 
         layout.addStretch()
 
+        scroll.setWidget(content)
+        outer_layout.addWidget(scroll)
+
         self.auto_cb.toggled.connect(self._on_changed)
         self.ask_cb.toggled.connect(self._on_changed)
 
@@ -508,18 +531,324 @@ class _ThermalTab(_ScanlineWidget):
         self.changed.emit()
 
 
+# ------------------------------------------------------------------
+# Temperature graph widget (pure QPainter — no external dependencies)
+# ------------------------------------------------------------------
+
+
+class _TemperatureGraphWidget(QWidget):
+    """Custom widget that draws a temperature-over-time line graph."""
+
+    _MARGIN_LEFT = 48
+    _MARGIN_RIGHT = 12
+    _MARGIN_TOP = 10
+    _MARGIN_BOTTOM = 28
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._points: list[TemperaturePoint] = []
+        self._show_cpu = True
+        self._show_gpu = True
+        self._min_temp = 20.0
+        self._max_temp = 100.0
+        self.setMinimumHeight(180)
+
+    def set_data(
+        self,
+        points: list[TemperaturePoint],
+        *,
+        show_cpu: bool = True,
+        show_gpu: bool = True,
+    ) -> None:
+        """Update the graph data and trigger a repaint."""
+        self._points = points
+        self._show_cpu = show_cpu
+        self._show_gpu = show_gpu
+        self._recalc_range(points)
+        self.update()
+
+    def _recalc_range(self, points: list[TemperaturePoint]) -> None:
+        temps: list[float] = []
+        for p in points:
+            if self._show_cpu and p.cpu_temp is not None:
+                temps.append(p.cpu_temp)
+            if self._show_gpu and p.gpu_temp is not None:
+                temps.append(p.gpu_temp)
+        if temps:
+            self._min_temp = max(0.0, min(temps) - 5)
+            self._max_temp = max(temps) + 5
+        else:
+            self._min_temp, self._max_temp = 20.0, 100.0
+        if self._max_temp - self._min_temp < 10:
+            self._max_temp = self._min_temp + 10
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+        ml, mr, mt, mb = (
+            self._MARGIN_LEFT,
+            self._MARGIN_RIGHT,
+            self._MARGIN_TOP,
+            self._MARGIN_BOTTOM,
+        )
+        gw = w - ml - mr  # graph area width
+        gh = h - mt - mb  # graph area height
+
+        # Background
+        painter.fillRect(self.rect(), QColor(COLOR_BG_PANEL))
+
+        if gw < 10 or gh < 10:
+            painter.end()
+            return
+
+        # Grid
+        grid_pen = QPen(QColor(COLOR_BORDER))
+        grid_pen.setStyle(Qt.PenStyle.DotLine)
+        painter.setPen(grid_pen)
+        temp_range = self._max_temp - self._min_temp
+        step = max(5, int(temp_range / 5))
+        t = int(self._min_temp / step) * step
+        while t <= self._max_temp:
+            y = mt + gh - (t - self._min_temp) / temp_range * gh
+            painter.drawLine(ml, int(y), ml + gw, int(y))
+            t += step
+
+        # Y-axis labels
+        label_pen = QPen(QColor(COLOR_TEXT_DIM))
+        painter.setPen(label_pen)
+        painter.setFont(QFont("Consolas", 8))
+        t = int(self._min_temp / step) * step
+        while t <= self._max_temp:
+            y = mt + gh - (t - self._min_temp) / temp_range * gh
+            painter.drawText(2, int(y) - 6, ml - 6, 14, Qt.AlignmentFlag.AlignRight, f"{t}°")
+            t += step
+
+        # X-axis time labels
+        points = self._points
+        if len(points) >= 2:
+            t_start = points[0].timestamp
+            t_end = points[-1].timestamp
+            t_span = t_end - t_start
+            if t_span > 0:
+                # Draw 4–5 time labels
+                for i in range(5):
+                    frac = i / 4.0
+                    x = ml + int(frac * gw)
+                    ts = t_start + frac * t_span
+                    label = time.strftime("%H:%M", time.localtime(ts))
+                    painter.drawText(
+                        x - 20, h - mb + 4, 40, 14,
+                        Qt.AlignmentFlag.AlignCenter, label,
+                    )
+
+        # Draw temperature lines
+        if self._show_cpu:
+            self._draw_line(painter, points, "cpu", QColor(COLOR_GREEN), gw, gh, ml, mt)
+        if self._show_gpu:
+            self._draw_line(painter, points, "gpu", QColor(COLOR_PURPLE), gw, gh, ml, mt)
+
+        # Legend
+        lx = ml + 6
+        ly = mt + 4
+        painter.setFont(QFont("Consolas", 9, QFont.Weight.Bold))
+        if self._show_cpu:
+            painter.setPen(QPen(QColor(COLOR_GREEN)))
+            painter.drawText(lx, ly, 80, 14, Qt.AlignmentFlag.AlignLeft, "— CPU")
+            lx += 56
+        if self._show_gpu:
+            painter.setPen(QPen(QColor(COLOR_PURPLE)))
+            painter.drawText(lx, ly, 80, 14, Qt.AlignmentFlag.AlignLeft, "— GPU")
+
+        painter.end()
+
+    def _draw_line(
+        self,
+        painter: QPainter,
+        points: list[TemperaturePoint],
+        sensor: str,
+        color: QColor,
+        gw: int,
+        gh: int,
+        ml: int,
+        mt: int,
+    ) -> None:
+        if len(points) < 2:
+            return
+        t_start = points[0].timestamp
+        t_end = points[-1].timestamp
+        t_span = t_end - t_start
+        if t_span <= 0:
+            return
+
+        temp_range = self._max_temp - self._min_temp
+        pen = QPen(color, 2)
+        painter.setPen(pen)
+
+        path = QPainterPath()
+        first = True
+        for p in points:
+            temp = p.cpu_temp if sensor == "cpu" else p.gpu_temp
+            if temp is None:
+                continue
+            x = ml + (p.timestamp - t_start) / t_span * gw
+            y = mt + gh - (temp - self._min_temp) / temp_range * gh
+            if first:
+                path.moveTo(x, y)
+                first = False
+            else:
+                path.lineTo(x, y)
+        painter.drawPath(path)
+
+
+class _MetricsTab(_ScanlineWidget):
+    """Temperature history graphs with recent / full-session views."""
+
+    def __init__(self, config: AppConfig, history: TemperatureHistory) -> None:
+        super().__init__()
+        self._config = config
+        self._history = history
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        # Controls row
+        ctrl_row = QHBoxLayout()
+
+        ctrl_row.addWidget(QLabel("Mode:"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("Recent (15 min)", 15)
+        self.mode_combo.addItem("Recent (30 min)", 30)
+        self.mode_combo.addItem("Full session", 0)
+        self.mode_combo.currentIndexChanged.connect(self._refresh_graph)
+        ctrl_row.addWidget(self.mode_combo)
+        ctrl_row.addStretch()
+
+        self.show_cpu_cb = QCheckBox("CPU")
+        self.show_cpu_cb.setChecked(True)
+        self.show_cpu_cb.toggled.connect(self._refresh_graph)
+        ctrl_row.addWidget(self.show_cpu_cb)
+
+        self.show_gpu_cb = QCheckBox("GPU")
+        self.show_gpu_cb.setChecked(True)
+        self.show_gpu_cb.toggled.connect(self._refresh_graph)
+        ctrl_row.addWidget(self.show_gpu_cb)
+
+        layout.addLayout(ctrl_row)
+
+        # Graph widget
+        graph_group = QGroupBox("» Temperature Graph")
+        graph_lay = QVBoxLayout(graph_group)
+        graph_lay.setContentsMargins(6, 16, 6, 6)
+        self.graph = _TemperatureGraphWidget()
+        graph_lay.addWidget(self.graph)
+        layout.addWidget(graph_group, stretch=1)
+
+        # Stats group
+        stats_group = QGroupBox("» Session Statistics")
+        stats_lay = QFormLayout(stats_group)
+
+        self.cpu_min_label = QLabel("—")
+        self.cpu_max_label = QLabel("—")
+        self.cpu_avg_label = QLabel("—")
+        self.gpu_min_label = QLabel("—")
+        self.gpu_max_label = QLabel("—")
+        self.gpu_avg_label = QLabel("—")
+        self.points_label = QLabel("0")
+
+        for lbl in (
+            self.cpu_min_label, self.cpu_max_label, self.cpu_avg_label,
+            self.gpu_min_label, self.gpu_max_label, self.gpu_avg_label,
+            self.points_label,
+        ):
+            lbl.setStyleSheet(f"color: {COLOR_TEXT_DIM};")
+
+        stats_lay.addRow("CPU min / max / avg:", self._stat_row(
+            self.cpu_min_label, self.cpu_max_label, self.cpu_avg_label,
+        ))
+        stats_lay.addRow("GPU min / max / avg:", self._stat_row(
+            self.gpu_min_label, self.gpu_max_label, self.gpu_avg_label,
+        ))
+        stats_lay.addRow("Data points:", self.points_label)
+
+        layout.addWidget(stats_group)
+
+    @staticmethod
+    def _stat_row(lbl_min: QLabel, lbl_max: QLabel, lbl_avg: QLabel) -> QWidget:
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(lbl_min)
+        row.addWidget(QLabel("/"))
+        row.addWidget(lbl_max)
+        row.addWidget(QLabel("/"))
+        row.addWidget(lbl_avg)
+        row.addStretch()
+        return w
+
+    def update_graph(self) -> None:
+        """Re-render the graph and stats from current history data."""
+        self._refresh_graph()
+
+    def _refresh_graph(self) -> None:
+        minutes = self.mode_combo.currentData()
+        if minutes and minutes > 0:
+            points = self._history.recent(float(minutes))
+        else:
+            points = self._history.full_session()
+
+        show_cpu = self.show_cpu_cb.isChecked()
+        show_gpu = self.show_gpu_cb.isChecked()
+
+        self.graph.set_data(points, show_cpu=show_cpu, show_gpu=show_gpu)
+        self._update_stats(points, show_cpu, show_gpu)
+
+    def _update_stats(
+        self,
+        points: list[TemperaturePoint],
+        show_cpu: bool,
+        show_gpu: bool,
+    ) -> None:
+        self.points_label.setText(str(len(points)))
+
+        cpu_temps = [p.cpu_temp for p in points if p.cpu_temp is not None]
+        gpu_temps = [p.gpu_temp for p in points if p.gpu_temp is not None]
+
+        if cpu_temps and show_cpu:
+            self.cpu_min_label.setText(f"{min(cpu_temps):.1f} °C")
+            self.cpu_max_label.setText(f"{max(cpu_temps):.1f} °C")
+            self.cpu_avg_label.setText(f"{sum(cpu_temps) / len(cpu_temps):.1f} °C")
+        else:
+            self.cpu_min_label.setText("—")
+            self.cpu_max_label.setText("—")
+            self.cpu_avg_label.setText("—")
+
+        if gpu_temps and show_gpu:
+            self.gpu_min_label.setText(f"{min(gpu_temps):.1f} °C")
+            self.gpu_max_label.setText(f"{max(gpu_temps):.1f} °C")
+            self.gpu_avg_label.setText(f"{sum(gpu_temps) / len(gpu_temps):.1f} °C")
+        else:
+            self.gpu_min_label.setText("—")
+            self.gpu_max_label.setText("—")
+            self.gpu_avg_label.setText("—")
+
+
 class MainWindow(QMainWindow):
     """Main settings window with tabbed interface."""
 
     config_changed = Signal()
 
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(self, config: AppConfig, history: TemperatureHistory | None = None) -> None:
         super().__init__()
         self._config = config
+        self._history = history or TemperatureHistory()
 
         self.setWindowTitle(f"{APP_NAME} — Settings")
-        self.setMinimumSize(460, 520)
-        self.resize(480, 580)
+        self.setMinimumSize(480, 560)
+        self.resize(500, 620)
 
         # Central widget
         central = QWidget()
@@ -533,11 +862,13 @@ class MainWindow(QMainWindow):
         self.overlay_tab = _OverlayTab(config)
         self.alerts_tab = _AlertsTab(config)
         self.thermal_tab = _ThermalTab(config)
+        self.metrics_tab = _MetricsTab(config, self._history)
 
         self.tabs.addTab(self.dashboard_tab, "⌂ Dashboard")
         self.tabs.addTab(self.overlay_tab, "◉ Overlay")
-        self.tabs.addTab(self.alerts_tab, "⚠ Alerts")
+        self.tabs.addTab(self.alerts_tab, "⊘ Alerts")
         self.tabs.addTab(self.thermal_tab, "♨ Thermal")
+        self.tabs.addTab(self.metrics_tab, "▤ Metrics")
 
         main_layout.addWidget(self.tabs)
 
@@ -558,6 +889,9 @@ class MainWindow(QMainWindow):
     def update_reading(self, snapshot: HardwareSnapshot) -> None:
         """Forward hardware reading to relevant tabs."""
         self.dashboard_tab.update_reading(snapshot)
+        # Update metrics graph (only when tab is visible for performance)
+        if self.tabs.currentWidget() is self.metrics_tab:
+            self.metrics_tab.update_graph()
 
     def update_correction_status(
         self, cpu_corrected: bool, gpu_corrected: bool

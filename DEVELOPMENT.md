@@ -47,8 +47,10 @@ src/systemommy/
 ├── constants.py         # Thresholds, colours, default values
 ├── hardware/
 │   ├── __init__.py      # Re-exports: CpuReading, GpuReading, HardwareMonitor, etc.
-│   ├── cpu.py           # CPU temp reading (psutil → OHM → WMI fallback chain)
-│   ├── gpu.py           # GPU temp reading (NVML → OHM fallback chain)
+│   ├── cpu.py           # CPU temp reading (psutil → OHM → LHWM → PowerShell → WMI)
+│   ├── gpu.py           # GPU temp reading (NVML → nvidia-smi → sysfs → OHM)
+│   ├── history.py       # TemperatureHistory — timestamped ring-buffer for graphs
+│   ├── info.py          # Hardware detection & threshold estimation
 │   ├── monitor.py       # QTimer-based polling, emits HardwareSnapshot via Signal
 │   └── thermal.py       # Reversible CPU/GPU throttling (powercfg, NVML)
 ├── overlay/
@@ -59,7 +61,7 @@ src/systemommy/
 │   └── manager.py       # Threshold evaluation, sound alerts, correction prompts
 └── ui/
     ├── __init__.py      # Re-exports: MainWindow, SystemTray
-    ├── main_window.py   # Tabbed settings window (Dashboard, Overlay, Alerts, Thermal)
+    ├── main_window.py   # Tabbed settings (Dashboard, Overlay, Alerts, Thermal, Metrics)
     ├── theme.py         # QSS stylesheet — hacker/terminal aesthetic
     └── tray.py          # System tray icon and context menu
 ```
@@ -74,11 +76,11 @@ HardwareMonitor (QTimer)
            ▼
     HardwareSnapshot
            │
-    ┌──────┼──────────┐
-    ▼      ▼          ▼
-Overlay  MainWindow  AlertManager
-Widget   Dashboard     │
-                       ├── alert_triggered signal → status bar
+    ┌──────┼──────────┬──────────────┐
+    ▼      ▼          ▼              ▼
+Overlay  MainWindow  AlertManager  TemperatureHistory
+Widget   Dashboard     │            (ring-buffer)
+         Metrics       ├── alert_triggered → status bar
                        └── ThermalCorrector → powercfg / NVML
 ```
 
@@ -86,7 +88,7 @@ Widget   Dashboard     │
 
 All inter-component communication uses Qt signals:
 
-- `HardwareMonitor.reading_updated(HardwareSnapshot)` → overlay, dashboard, alerts
+- `HardwareMonitor.reading_updated(HardwareSnapshot)` → overlay, dashboard, alerts, history
 - `AlertManager.alert_triggered(str, str)` → main window status bar
 - `_OverlayTab.changed()` / `_AlertsTab.changed()` / `_ThermalTab.changed()` → config save + overlay refresh
 - `SystemTray.activated(reason)` → show settings on double-click
@@ -145,27 +147,35 @@ Test structure follows source structure:
 - `test_config.py` — config defaults, persistence, round-trip
 - `test_constants.py` — threshold ordering, colour format
 - `test_hardware.py` — data structure creation, immutability
+- `test_history.py` — temperature history recording, recent/full queries, ring-buffer
 - `test_thermal.py` — corrector initial state, no-op restore
 - `test_overlay.py` — `_temp_color` helper threshold logic
 - `test_alerts.py` — alert evaluation, cooldown, threshold validation
+- `test_fallbacks.py` — CPU/GPU temperature fallback chains
+- `test_info.py` — hardware detection, TjMax estimation, threshold calculation
+- `test_launcher_script.py` — run.bat structure validation
 
 ---
 
 ## Known Issues / Areas for Improvement
 
 ### High Priority
-- [ ] **Temperature sensors on Linux** — psutil coverage varies by distro;
-      consider `/sys/class/hwmon` direct reading as additional fallback.
+- [x] **Temperature sensors on Linux** — sysfs `/sys/class/hwmon` direct reading
+      is now an additional fallback.
+- [x] **Console window spawning** — all subprocess calls now use
+      `CREATE_NO_WINDOW` on Windows to prevent visible console flashing.
+- [x] **CPU temperature accuracy** — fallback chain reordered so OHM /
+      LibreHardwareMonitor are tried before the unreliable MSAcpi WMI source.
 - [ ] **AMD GPU support** — currently only NVIDIA via NVML; add ROCm-SMI
       or ADL for AMD GPUs.
 - [ ] **Multi-GPU support** — current code reads only GPU index 0.
 
 ### Medium Priority
-- [ ] **Temperature history** — add graphing / sparkline of recent temps
-      (last N minutes) in the Dashboard tab.
+- [x] **Temperature history** — Metrics tab with interactive line graph,
+      three view modes (15 min / 30 min / full session), and session
+      statistics (min/max/avg).
+- [x] **Log file output** — file logging to `~/.systemommy/systemommy.log`.
 - [ ] **Per-core CPU temperatures** — show individual core temps, not just max.
-- [ ] **Log file output** — add optional file logging for debugging
-      (currently only console/stderr).
 - [ ] **Overlay drag-to-position** — let users drag the overlay to reposition
       instead of manual X/Y entry.
 - [ ] **Hotkey support** — global hotkey to toggle overlay visibility.

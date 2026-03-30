@@ -5,9 +5,12 @@ Uses platform-specific APIs with a multi-level fallback chain:
 - **psutil**  ``sensors_temperatures()`` (Linux / macOS / FreeBSD).
 - **sysfs**   Direct read from ``/sys/class/thermal`` and ``/sys/class/hwmon``
   (Linux, works even when psutil's sensor list is empty).
-- **PowerShell / WMI**  ``MSAcpi_ThermalZoneTemperature`` via ``subprocess``
-  (Windows — no ``wmi`` pip package required).
 - **Open Hardware Monitor**  OHM WMI namespace (Windows, needs OHM running).
+- **LibreHardwareMonitor**  LHWM WMI namespace (Windows, needs LHWM running).
+- **PowerShell / WMI**  ``MSAcpi_ThermalZoneTemperature`` via ``subprocess``
+  (Windows — no ``wmi`` pip package required).  This source often returns
+  inaccurate readings (fixed ~28 °C) on many systems and is therefore tried
+  last.
 - **WMI python package**  ``wmi`` pip package fallback (Windows).
 
 Falls back to ``None`` when temperature cannot be read by any method.
@@ -27,6 +30,11 @@ logger = logging.getLogger(__name__)
 
 _IS_LINUX = platform.system() == "Linux"
 _IS_WINDOWS = platform.system() == "Windows"
+
+# Subprocess creation flag that prevents a visible console window on Windows.
+_SUBPROCESS_FLAGS: int = (
+    subprocess.CREATE_NO_WINDOW if _IS_WINDOWS else 0
+)
 
 
 @dataclass(frozen=True)
@@ -157,6 +165,7 @@ def _read_temperature_powershell() -> float | None:
             text=True,
             timeout=5,
             check=False,
+            creationflags=_SUBPROCESS_FLAGS,
         )
         if result.returncode != 0:
             return None
@@ -214,6 +223,31 @@ def _read_temperature_ohm() -> float | None:
     return None
 
 
+def _read_temperature_lhwm() -> float | None:
+    r"""Attempt to read CPU temperature via LibreHardwareMonitor WMI.
+
+    LibreHardwareMonitor (LHWM) is the maintained successor to Open
+    Hardware Monitor and exposes the ``root\LibreHardwareMonitor`` WMI
+    namespace when running.
+    """
+    if not _IS_WINDOWS:
+        return None
+    try:
+        import wmi  # type: ignore[import-untyped]
+
+        w = wmi.WMI(namespace=r"root\LibreHardwareMonitor")
+        sensors = w.Sensor()
+        cpu_temps: list[float] = []
+        for sensor in sensors:
+            if sensor.SensorType == "Temperature" and "cpu" in sensor.Name.lower():
+                cpu_temps.append(float(sensor.Value))
+        if cpu_temps:
+            return round(max(cpu_temps), 1)
+    except Exception:  # noqa: BLE001
+        logger.debug("LHWM temperature read failed.", exc_info=True)
+    return None
+
+
 # ------------------------------------------------------------------
 # Public API
 # ------------------------------------------------------------------
@@ -223,7 +257,11 @@ def read_cpu() -> CpuReading:
     """Return current CPU temperature and usage.
 
     Tries multiple sources in order of reliability:
-    psutil → sysfs (Linux) → PowerShell (Windows) → OHM → WMI package.
+    psutil → sysfs (Linux) → OHM → LHWM → PowerShell → WMI package.
+
+    On Windows the OHM / LibreHardwareMonitor sources are preferred over
+    the PowerShell ``MSAcpi_ThermalZoneTemperature`` query because that
+    WMI class is often inaccurate (returns a fixed ~28 °C on many boards).
     """
     usage = psutil.cpu_percent(interval=0)
 
@@ -232,9 +270,11 @@ def read_cpu() -> CpuReading:
     if temp is None and _IS_LINUX:
         temp = _read_temperature_sysfs()
     if temp is None and _IS_WINDOWS:
-        temp = _read_temperature_powershell()
-    if temp is None and _IS_WINDOWS:
         temp = _read_temperature_ohm()
+    if temp is None and _IS_WINDOWS:
+        temp = _read_temperature_lhwm()
+    if temp is None and _IS_WINDOWS:
+        temp = _read_temperature_powershell()
     if temp is None and _IS_WINDOWS:
         temp = _read_temperature_wmi()
 
