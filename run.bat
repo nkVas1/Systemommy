@@ -152,75 +152,62 @@ if "!NEEDS_INSTALL!"=="0" (
     if !errorlevel! neq 0 set "NEEDS_INSTALL=1"
 )
 
-if "!NEEDS_INSTALL!"=="1" (
-    echo  [3/4] Installing dependencies...
-    echo        PySide6 is ~570 MB — first install may take a few minutes.
-    echo.
+if "!NEEDS_INSTALL!"=="0" goto :install_ok
 
-    REM Upgrade pip itself (don't fail if offline — old pip may be OK)
-    echo        Upgrading pip...
-    python -m pip install --upgrade pip --quiet --timeout 30 2>nul
+echo  [3/4] Installing dependencies...
+echo        PySide6 is ~570 MB — first install may take a few minutes.
+echo.
+
+REM Upgrade pip itself (don't fail if offline — old pip may be OK)
+echo        Upgrading pip...
+python -m pip install --upgrade pip --quiet --timeout 30 2>nul
+if !errorlevel! neq 0 (
+    echo        [note] pip upgrade skipped — continuing with current version.
+) else (
+    echo        Done.
+)
+echo.
+
+REM Pip settings: generous timeout, retries, no version nag
+set "PIP_DEFAULT_TIMEOUT=300"
+set "PIP_RETRIES=5"
+set "PIP_DISABLE_PIP_VERSION_CHECK=1"
+
+REM Check for local wheel cache (.wheels directory)
+set "USE_CACHE=0"
+if exist ".wheels\" (
+    set "_HAS_QT=0"
+    set "_HAS_PS=0"
+    dir /b ".wheels\PySide6*.whl" >nul 2>nul && set "_HAS_QT=1"
+    dir /b ".wheels\psutil*.whl"  >nul 2>nul && set "_HAS_PS=1"
+    if "!_HAS_QT!"=="1" if "!_HAS_PS!"=="1" set "USE_CACHE=1"
+)
+
+if "!USE_CACHE!"=="1" (
+    echo        Installing from local cache: .wheels\
+    pip install --no-index --find-links=.wheels -r requirements.txt
     if !errorlevel! neq 0 (
-        echo        [note] pip upgrade skipped — continuing with current version.
-    ) else (
-        echo        Done.
-    )
-    echo.
-
-    REM Pip settings: generous timeout, retries, no version nag
-    set "PIP_DEFAULT_TIMEOUT=300"
-    set "PIP_RETRIES=5"
-    set "PIP_DISABLE_PIP_VERSION_CHECK=1"
-
-    REM Check for local wheel cache (.wheels directory)
-    set "USE_CACHE=0"
-    if exist ".wheels\" (
-        set "_HAS_QT=0"
-        set "_HAS_PS=0"
-        dir /b ".wheels\PySide6*.whl" >nul 2>nul && set "_HAS_QT=1"
-        dir /b ".wheels\psutil*.whl"  >nul 2>nul && set "_HAS_PS=1"
-        if "!_HAS_QT!"=="1" if "!_HAS_PS!"=="1" set "USE_CACHE=1"
-    )
-
-    if "!USE_CACHE!"=="1" (
-        echo        Installing from local cache: .wheels\
-        pip install --no-index --find-links=.wheels -r requirements.txt
-        if !errorlevel! neq 0 (
-            echo.
-            echo        [note] Offline install failed — falling back to PyPI...
-            pip install --prefer-binary -r requirements.txt
-        )
-    ) else (
-        echo        Downloading from PyPI...
+        echo.
+        echo        [note] Offline install failed — falling back to PyPI...
         pip install --prefer-binary -r requirements.txt
     )
-
-    if !errorlevel! neq 0 (
-        echo.
-        echo        [ERROR] Installation failed.
-        echo.
-        echo        Possible causes:
-        echo          - Unstable internet connection
-        echo          - PyPI temporarily unavailable
-        echo          - Insufficient disk space (PySide6 needs ~1.5 GB)
-        echo.
-        echo        Recovery options:
-        echo          1. Run this script again
-        echo          2. run.bat --force   (full reinstall)
-        echo          3. Pre-download packages for offline install:
-        echo               venv\Scripts\activate.bat
-        echo               pip download --dest .wheels -r requirements.txt
-        echo               run.bat
-        goto :fail
-    )
-
-    echo.
-    echo        Installation complete.
-    echo.
 ) else (
-    echo  [3/4] All packages are up to date.
-    echo.
+    echo        Downloading from PyPI...
+    pip install --prefer-binary -r requirements.txt
 )
+
+if !errorlevel! neq 0 goto :install_failed
+
+echo.
+echo        Installation complete.
+echo.
+goto :install_done
+
+:install_ok
+echo  [3/4] All packages are up to date.
+echo.
+
+:install_done
 
 REM ========================================================
 REM  STEP 4 — Launch the application
@@ -250,6 +237,25 @@ echo        Look for the green "S" icon in your system tray.
 echo.
 timeout /t 3 /nobreak >nul
 exit /b 0
+
+REM ============================================================
+:install_failed
+echo.
+echo        [ERROR] Installation failed.
+echo.
+echo        Possible causes:
+echo          - Unstable internet connection
+echo          - PyPI temporarily unavailable
+echo          - Insufficient disk space ^(PySide6 needs ~1.5 GB^)
+echo.
+echo        Recovery options:
+echo          1. Run this script again
+echo          2. run.bat --force   ^(full reinstall^)
+echo          3. Pre-download packages for offline install:
+echo               venv\Scripts\activate.bat
+echo               pip download --dest .wheels -r requirements.txt
+echo               run.bat
+goto :fail
 
 REM ============================================================
 :show_help

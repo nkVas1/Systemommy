@@ -45,7 +45,8 @@ class AlertManager(QObject):
         self._corrector = ThermalCorrector()
         self._last_alert_time: float = 0.0
         self._sound_play_count: int = 0
-        self._correction_prompted: bool = False
+        self._cpu_correction_declined: bool = False
+        self._gpu_correction_declined: bool = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -102,7 +103,8 @@ class AlertManager(QObject):
 
         # Temperatures normal — reset counters and restore if corrected
         self._sound_play_count = 0
-        self._correction_prompted = False
+        self._cpu_correction_declined = False
+        self._gpu_correction_declined = False
         if self._corrector.is_cpu_corrected or self._corrector.is_gpu_corrected:
             self._corrector.restore_all()
             self.alert_triggered.emit(
@@ -135,8 +137,9 @@ class AlertManager(QObject):
             return
         if self._corrector.is_cpu_corrected:
             return
-        if self._config.thermal.ask_before_correct and not self._correction_prompted:
-            self._correction_prompted = True
+        if self._cpu_correction_declined:
+            return
+        if self._config.thermal.ask_before_correct:
             reply = QMessageBox.question(
                 None,
                 "Systemommy — Thermal Correction",
@@ -147,6 +150,7 @@ class AlertManager(QObject):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
+                self._cpu_correction_declined = True
                 return
         self._corrector.correct_cpu()
         self.alert_triggered.emit(
@@ -158,8 +162,9 @@ class AlertManager(QObject):
             return
         if self._corrector.is_gpu_corrected:
             return
-        if self._config.thermal.ask_before_correct and not self._correction_prompted:
-            self._correction_prompted = True
+        if self._gpu_correction_declined:
+            return
+        if self._config.thermal.ask_before_correct:
             reply = QMessageBox.question(
                 None,
                 "Systemommy — Thermal Correction",
@@ -170,6 +175,7 @@ class AlertManager(QObject):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
+                self._gpu_correction_declined = True
                 return
         self._corrector.correct_gpu()
         self.alert_triggered.emit(
