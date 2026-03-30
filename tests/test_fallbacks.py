@@ -8,6 +8,7 @@ import tempfile
 
 from systemommy.hardware.cpu import (
     CpuReading,
+    _is_cpu_sensor,
     _read_temperature_psutil,
     _read_temperature_sysfs,
     _read_temperature_ohm_ps,
@@ -16,6 +17,7 @@ from systemommy.hardware.cpu import (
 )
 from systemommy.hardware.gpu import (
     GpuReading,
+    _is_gpu_sensor,
     _read_nvidia_smi,
     _read_sysfs_gpu,
     _read_ohm_gpu_ps,
@@ -251,3 +253,83 @@ class TestGpuLhwmPsFallback:
             assert reading is not None
             assert reading.temperature == 78.5
             assert reading.name == "GPU (LHWM)"
+
+
+class TestIsCpuSensor:
+    """Verify _is_cpu_sensor matches Intel, AMD, and identifier-based sensors."""
+
+    def _make_sensor(self, name: str, identifier: str = "") -> MagicMock:
+        s = MagicMock()
+        s.Name = name
+        s.Identifier = identifier
+        return s
+
+    def test_matches_cpu_package(self) -> None:
+        assert _is_cpu_sensor(self._make_sensor("CPU Package"))
+
+    def test_matches_cpu_core(self) -> None:
+        assert _is_cpu_sensor(self._make_sensor("CPU Core #1"))
+
+    def test_matches_amd_tctl_tdie(self) -> None:
+        """AMD Ryzen 'Core (Tctl/Tdie)' does not contain 'cpu'."""
+        assert _is_cpu_sensor(self._make_sensor("Core (Tctl/Tdie)"))
+
+    def test_matches_amd_ccd(self) -> None:
+        """AMD Ryzen CCD-specific sensor."""
+        assert _is_cpu_sensor(self._make_sensor("CCD1 (Tdie)"))
+
+    def test_matches_core_average(self) -> None:
+        assert _is_cpu_sensor(self._make_sensor("Core Average"))
+
+    def test_matches_by_identifier(self) -> None:
+        """Sensor with no matching name but CPU identifier."""
+        assert _is_cpu_sensor(
+            self._make_sensor("Temperature #1", "/amdcpu/0/temperature/0")
+        )
+
+    def test_matches_intel_identifier(self) -> None:
+        assert _is_cpu_sensor(
+            self._make_sensor("Temperature #1", "/intelcpu/0/temperature/0")
+        )
+
+    def test_rejects_gpu_sensor(self) -> None:
+        assert not _is_cpu_sensor(
+            self._make_sensor("GPU Hot Spot", "/gpu-nvidia/0/temperature/1")
+        )
+
+    def test_rejects_unrelated_sensor(self) -> None:
+        assert not _is_cpu_sensor(
+            self._make_sensor("System", "/lpc/it8688e/temperature/2")
+        )
+
+
+class TestIsGpuSensor:
+    """Verify _is_gpu_sensor matches GPU sensors by name and identifier."""
+
+    def _make_sensor(self, name: str, identifier: str = "") -> MagicMock:
+        s = MagicMock()
+        s.Name = name
+        s.Identifier = identifier
+        return s
+
+    def test_matches_gpu_core(self) -> None:
+        assert _is_gpu_sensor(self._make_sensor("GPU Core"))
+
+    def test_matches_gpu_hot_spot(self) -> None:
+        assert _is_gpu_sensor(self._make_sensor("GPU Hot Spot"))
+
+    def test_matches_by_identifier(self) -> None:
+        """Sensor with generic name but GPU identifier."""
+        assert _is_gpu_sensor(
+            self._make_sensor("Temperature #1", "/gpu-nvidia/0/temperature/0")
+        )
+
+    def test_matches_amd_gpu_identifier(self) -> None:
+        assert _is_gpu_sensor(
+            self._make_sensor("Temperature", "/gpu-amd/0/temperature/0")
+        )
+
+    def test_rejects_cpu_sensor(self) -> None:
+        assert not _is_gpu_sensor(
+            self._make_sensor("CPU Package", "/intelcpu/0/temperature/0")
+        )
