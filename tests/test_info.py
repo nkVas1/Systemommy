@@ -22,7 +22,7 @@ class TestEstimateTjmax:
     def test_intel_core_i7(self) -> None:
         assert _estimate_tjmax("Intel(R) Core(TM) i7-12700K") == 100
 
-    def test_intel_core_i9_13th(self) -> None:
+    def test_intel_core_i9(self) -> None:
         assert _estimate_tjmax("Intel(R) Core(TM) i9-13900K") == 100
 
     def test_intel_xeon(self) -> None:

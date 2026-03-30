@@ -90,7 +90,14 @@ def _read_temperature_sysfs() -> float | None:
             hwmon_dir = name_path.rsplit("/", 1)[0]
             with open(name_path) as fh:
                 name = fh.read().strip().lower()
-            # Only read CPU-related hwmon devices
+            # Only read CPU-related hwmon devices.
+            # These are the most common Linux CPU thermal sensor drivers:
+            # - coretemp: Intel Core/Xeon CPUs
+            # - k10temp: AMD Family 10h+ CPUs (Ryzen, EPYC, etc.)
+            # - zenpower: Community AMD Zen driver (alternative to k10temp)
+            # - cpu_thermal: ARM / SoC CPU thermal driver
+            # - acpitz: ACPI thermal zone (generic, may report CPU temp)
+            # - soc_thermal: System-on-Chip thermal driver
             if name not in ("coretemp", "k10temp", "zenpower", "cpu_thermal",
                             "acpitz", "soc_thermal"):
                 continue

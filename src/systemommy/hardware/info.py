@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import platform
-import re
 import subprocess
 from dataclasses import dataclass
 
@@ -110,11 +109,6 @@ def _estimate_tjmax(model: str) -> int:
     # Intel — most desktop chips are 100 °C; high-end HEDT is 90-100 °C;
     # mobile parts can be up to 105 °C.
     if "intel" in model_lower or "core" in model_lower:
-        if any(tag in model_lower for tag in ("i9-14", "i9-13", "i9-12",
-                                               "i7-14", "i7-13", "i7-12")):
-            return 100
-        if any(tag in model_lower for tag in ("i9-", "i7-", "i5-", "i3-")):
-            return 100
         if "xeon" in model_lower:
             return 95
         if "celeron" in model_lower or "pentium" in model_lower:

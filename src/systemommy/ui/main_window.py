@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QPainter, QPaintEvent, QColor
 from PySide6.QtWidgets import (
@@ -33,6 +35,8 @@ from systemommy.constants import (
 )
 from systemommy.hardware.info import CpuInfo, GpuInfo, detect_cpu_info, detect_gpu_info
 from systemommy.hardware.monitor import HardwareSnapshot
+
+logger = logging.getLogger(__name__)
 
 
 class _ScanlineWidget(QWidget):
@@ -75,7 +79,7 @@ class _DashboardTab(_ScanlineWidget):
             self._cpu_info = detect_cpu_info()
             self._gpu_info = detect_gpu_info()
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("Hardware info detection failed in dashboard.", exc_info=True)
 
         cpu_model = self._cpu_info.model if self._cpu_info else "Detecting…"
         cpu_cores = (
