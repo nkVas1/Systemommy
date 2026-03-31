@@ -15,10 +15,14 @@ Uses platform-specific APIs with a multi-level fallback chain:
 - **LibreHardwareMonitor (PowerShell)**  LHWM WMI namespace via
   ``powershell`` subprocess (Windows, needs LHWM running — does **not**
   require the ``wmi`` pip package).
+- **Thermal Zone performance counter**
+  ``Win32_PerfFormattedData_Counters_ThermalZoneInformation`` via PowerShell
+  (Windows 10 1903+ / Windows 11 — no ``wmi`` pip package required, no admin
+  privileges required).  More reliable than ``MSAcpi`` on many systems.
 - **PowerShell / WMI**  ``MSAcpi_ThermalZoneTemperature`` via ``subprocess``
   (Windows — no ``wmi`` pip package required).  This source often returns
   inaccurate readings (fixed ~28 °C) on many systems and is therefore tried
-  last.
+  late.  Suspiciously low readings (< 15 °C) are rejected.
 - **WMI python package**  ``wmi`` pip package fallback (Windows).
 
 Falls back to ``None`` when temperature cannot be read by any method.
@@ -188,6 +192,67 @@ def _read_temperature_sysfs() -> float | None:
     return None
 
 
+def _read_temperature_thermal_zone_info_ps() -> float | None:
+    """Read CPU temperature via Windows performance counter thermal zones.
+
+    Queries ``Win32_PerfFormattedData_Counters_ThermalZoneInformation``
+    which is available on Windows 10 1903+ and Windows 11.  Unlike
+    ``MSAcpi_ThermalZoneTemperature`` this counter does **not** require
+    administrator privileges and often reports more accurate values.
+
+    The ``Temperature`` property is in tenths of Kelvin.
+    """
+    if not _IS_WINDOWS:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                (
+                    "Get-CimInstance"
+                    " Win32_PerfFormattedData_Counters_ThermalZoneInformation"
+                    " -ErrorAction Stop"
+                    " | Where-Object { $_.Name -match 'CPU|Thermal|ACPI' -or"
+                    " $_.HighPrecisionTemperature -gt 2732 }"
+                    " | ForEach-Object {"
+                    " if ($_.HighPrecisionTemperature) {"
+                    " $_.HighPrecisionTemperature"
+                    " } elseif ($_.Temperature) {"
+                    " $_.Temperature * 10"
+                    " } }"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_PS_TIMEOUT,
+            check=False,
+            creationflags=_SUBPROCESS_FLAGS,
+        )
+        if result.returncode != 0:
+            return None
+        values: list[float] = []
+        for line in result.stdout.strip().splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    kelvin_tenths = float(line)
+                    celsius = kelvin_tenths / 10.0 - 273.15
+                    if 15 < celsius < 150:  # sanity + low-reading filter
+                        values.append(celsius)
+                except ValueError:
+                    continue
+        if values:
+            return round(max(values), 1)
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "Thermal zone performance counter read failed.", exc_info=True,
+        )
+    return None
+
+
 def _read_temperature_powershell() -> float | None:
     """Read CPU temperature via PowerShell on Windows (no ``wmi`` package).
 
@@ -230,7 +295,10 @@ def _read_temperature_powershell() -> float | None:
                 except ValueError:
                     continue
         if values:
-            return round(max(values), 1)
+            temp = round(max(values), 1)
+            # Reject suspiciously low fixed readings that many boards return
+            if temp >= 15.0:
+                return temp
     except Exception:  # noqa: BLE001
         logger.debug("PowerShell temperature read failed.", exc_info=True)
     return None
@@ -412,30 +480,46 @@ def read_cpu() -> CpuReading:
 
     Tries multiple sources in order of reliability:
     psutil → sysfs (Linux) → OHM (wmi) → LHWM (wmi) → OHM (PowerShell) →
-    LHWM (PowerShell) → PowerShell MSAcpi → WMI package.
+    LHWM (PowerShell) → ThermalZoneInfo (perf counter) →
+    PowerShell MSAcpi → WMI package.
 
     On Windows the OHM / LibreHardwareMonitor sources are preferred over
     the PowerShell ``MSAcpi_ThermalZoneTemperature`` query because that
     WMI class is often inaccurate (returns a fixed ~28 °C on many boards).
+
+    The ``Win32_PerfFormattedData_Counters_ThermalZoneInformation`` counter
+    (available on Windows 10 1903+ / Windows 11) sits between
+    OHM/LHWM and MSAcpi — it does not require admin privileges and is more
+    accurate than MSAcpi on most systems.
     """
     usage = psutil.cpu_percent(interval=0)
 
-    # Try sources in order of reliability
-    temp = _read_temperature_psutil()
-    if temp is None and _IS_LINUX:
-        temp = _read_temperature_sysfs()
-    if temp is None and _IS_WINDOWS:
-        temp = _read_temperature_ohm()
-    if temp is None and _IS_WINDOWS:
-        temp = _read_temperature_lhwm()
-    if temp is None and _IS_WINDOWS:
-        temp = _read_temperature_ohm_ps()
-    if temp is None and _IS_WINDOWS:
-        temp = _read_temperature_lhwm_ps()
-    if temp is None and _IS_WINDOWS:
-        temp = _read_temperature_powershell()
-    if temp is None and _IS_WINDOWS:
-        temp = _read_temperature_wmi()
+    # Ordered fallback chain — each method is tried only if the previous
+    # returned *None*.  A tuple of (reader_function, label, platform_guard).
+    _chain: tuple[tuple[object, str, bool], ...] = (
+        (_read_temperature_psutil, "psutil", True),
+        (_read_temperature_sysfs, "sysfs", _IS_LINUX),
+        (_read_temperature_ohm, "OHM (wmi)", _IS_WINDOWS),
+        (_read_temperature_lhwm, "LHWM (wmi)", _IS_WINDOWS),
+        (_read_temperature_ohm_ps, "OHM (PowerShell)", _IS_WINDOWS),
+        (_read_temperature_lhwm_ps, "LHWM (PowerShell)", _IS_WINDOWS),
+        (
+            _read_temperature_thermal_zone_info_ps,
+            "ThermalZoneInfo (perf counter)",
+            _IS_WINDOWS,
+        ),
+        (_read_temperature_powershell, "MSAcpi (PowerShell)", _IS_WINDOWS),
+        (_read_temperature_wmi, "WMI package", _IS_WINDOWS),
+    )
+
+    temp: float | None = None
+    for reader, label, guard in _chain:
+        if not guard:
+            continue
+        temp = reader()  # type: ignore[operator]
+        if temp is not None:
+            logger.debug("CPU temperature read via %s: %.1f °C", label, temp)
+            break
 
     if temp is None:
         logger.info(

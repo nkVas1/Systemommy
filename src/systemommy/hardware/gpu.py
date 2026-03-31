@@ -367,33 +367,29 @@ def read_gpu() -> GpuReading:
     NVML → nvidia-smi → sysfs (Linux) → OHM (wmi) → LHWM (wmi) →
     OHM (PowerShell) → LHWM (PowerShell).
     """
-    reading = _read_nvml()
-    if reading is not None:
-        return reading
+    # Ordered fallback chain — each method is tried only if the previous
+    # returned *None*.
+    _chain: tuple[tuple[object, str, bool], ...] = (
+        (_read_nvml, "NVML", True),
+        (_read_nvidia_smi, "nvidia-smi", True),
+        (_read_sysfs_gpu, "sysfs", _IS_LINUX),
+        (_read_ohm_gpu, "OHM (wmi)", _IS_WINDOWS),
+        (_read_lhwm_gpu, "LHWM (wmi)", _IS_WINDOWS),
+        (_read_ohm_gpu_ps, "OHM (PowerShell)", _IS_WINDOWS),
+        (_read_lhwm_gpu_ps, "LHWM (PowerShell)", _IS_WINDOWS),
+    )
 
-    reading = _read_nvidia_smi()
-    if reading is not None:
-        return reading
-
-    reading = _read_sysfs_gpu()
-    if reading is not None:
-        return reading
-
-    reading = _read_ohm_gpu()
-    if reading is not None:
-        return reading
-
-    reading = _read_lhwm_gpu()
-    if reading is not None:
-        return reading
-
-    reading = _read_ohm_gpu_ps()
-    if reading is not None:
-        return reading
-
-    reading = _read_lhwm_gpu_ps()
-    if reading is not None:
-        return reading
+    for reader, label, guard in _chain:
+        if not guard:
+            continue
+        reading = reader()  # type: ignore[operator]
+        if reading is not None:
+            logger.debug(
+                "GPU temperature read via %s: %s °C",
+                label,
+                reading.temperature,
+            )
+            return reading
 
     logger.info(
         "GPU temperature unavailable — all fallback methods returned None. "

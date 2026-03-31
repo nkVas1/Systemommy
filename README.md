@@ -77,6 +77,29 @@ run.bat --force
 
 This deletes the virtual environment and installs everything from scratch.
 
+### CPU temperature shows "N/A"
+
+On Windows, CPU temperature is **not** available through standard APIs — it
+requires a kernel-level driver.  Systemommy tries 9 different sources
+automatically:
+
+| Source | Needs | Notes |
+|--------|-------|-------|
+| psutil | — | Works on Linux / macOS only |
+| sysfs hwmon | — | Linux only |
+| Open Hardware Monitor (WMI) | OHM running + `wmi` pip pkg | Best accuracy |
+| LibreHardwareMonitor (WMI) | LHWM running + `wmi` pip pkg | Best accuracy |
+| OHM (PowerShell) | OHM running | No extra pip packages |
+| LHWM (PowerShell) | LHWM running | No extra pip packages |
+| ThermalZoneInfo (perf counter) | Windows 10 1903+ | No admin, no extra software |
+| MSAcpi (PowerShell) | Admin on some systems | Often inaccurate (~28 °C) |
+| WMI package | `wmi` pip pkg | Last resort |
+
+**Recommended fix:** Install and run
+[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+(free, open source).  Run it as Administrator and leave it in the background —
+Systemommy will detect it automatically.
+
 ### Installation timeouts on slow connections
 
 PySide6 is a large package (~570 MB). On slow connections pip may time out.
@@ -99,8 +122,8 @@ src/systemommy/
 ├── config.py            # JSON settings persistence
 ├── constants.py         # Thresholds, colours, defaults
 ├── hardware/
-│   ├── cpu.py           # CPU temperature (psutil / sysfs / OHM / LHWM / PowerShell / WMI)
-│   ├── gpu.py           # GPU temperature (NVML / nvidia-smi / sysfs / OHM / LHWM)
+│   ├── cpu.py           # CPU temperature (9-level fallback: psutil / sysfs / OHM / LHWM / ThermalZoneInfo / MSAcpi / WMI)
+│   ├── gpu.py           # GPU temperature (7-level fallback: NVML / nvidia-smi / sysfs / OHM / LHWM)
 │   ├── history.py       # Temperature history for graphs
 │   ├── info.py          # Hardware detection & thresholds
 │   ├── monitor.py       # Polling orchestrator (Qt signals)

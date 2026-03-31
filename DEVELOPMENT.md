@@ -47,8 +47,8 @@ src/systemommy/
 ├── constants.py         # Thresholds, colours, default values
 ├── hardware/
 │   ├── __init__.py      # Re-exports: CpuReading, GpuReading, HardwareMonitor, etc.
-│   ├── cpu.py           # CPU temp reading (psutil → sysfs → OHM → LHWM → OHM PS → LHWM PS → PowerShell → WMI)
-│   ├── gpu.py           # GPU temp reading (NVML → nvidia-smi → sysfs → OHM → LHWM → OHM PS → LHWM PS)
+│   ├── cpu.py           # CPU temp reading (9-level fallback: psutil → sysfs → OHM → LHWM → OHM PS → LHWM PS → ThermalZoneInfo → MSAcpi → WMI)
+│   ├── gpu.py           # GPU temp reading (7-level fallback: NVML → nvidia-smi → sysfs → OHM → LHWM → OHM PS → LHWM PS)
 │   ├── history.py       # TemperatureHistory — timestamped ring-buffer for graphs
 │   ├── info.py          # Hardware detection & threshold estimation
 │   ├── monitor.py       # QTimer-based polling, emits HardwareSnapshot via Signal
@@ -151,9 +151,9 @@ Test structure follows source structure:
 - `test_thermal.py` — corrector initial state, no-op restore
 - `test_overlay.py` — `_temp_color` helper threshold logic
 - `test_alerts.py` — alert evaluation, cooldown, threshold validation
-- `test_fallbacks.py` — CPU/GPU temperature fallback chains (incl. OHM/LHWM PowerShell)
+- `test_fallbacks.py` — CPU/GPU temperature fallback chains (incl. OHM/LHWM PowerShell, ThermalZoneInfo)
 - `test_info.py` — hardware detection, TjMax estimation, threshold calculation
-- `test_metrics_graph.py` — graph data flow, history sharing, tab-switch refresh
+- `test_metrics_graph.py` — graph data flow, history sharing, tab-switch refresh, rendering robustness
 - `test_launcher_script.py` — run.bat structure validation
 
 ---
@@ -177,6 +177,20 @@ Test structure follows source structure:
       OHM and LHWM queries that work without the ``wmi`` pip package.
 - [x] **GPU LHWM fallback** — added LibreHardwareMonitor support for GPU
       temperature reading (via ``wmi`` package and PowerShell subprocess).
+- [x] **ThermalZoneInfo fallback (v1.3.0)** — added
+      ``Win32_PerfFormattedData_Counters_ThermalZoneInformation`` as a
+      new CPU temperature source on Windows 10 1903+ / Windows 11.  Does
+      not require administrator privileges or third-party software.
+      Suspiciously low readings (< 15 °C) are automatically rejected.
+- [x] **Graph rendering robustness (v1.3.0)** — tab comparison now uses
+      integer index instead of object identity (avoids rare Shiboken wrapper
+      issues); graph refresh deferred via ``QTimer.singleShot(0, …)`` so the
+      widget is fully laid out before painting; ``WA_OpaquePaintEvent``
+      ensures custom painting is not overridden by the global stylesheet;
+      "Waiting for data…" placeholder shown when graph has no data.
+- [x] **Fallback chain refactor (v1.3.0)** — CPU and GPU fallback chains
+      rewritten as clean table-driven loops with per-method debug logging
+      that records which source succeeded.
 - [ ] **AMD GPU support** — currently only NVIDIA via NVML; add ROCm-SMI
       or ADL for AMD GPUs.
 - [ ] **Multi-GPU support** — current code reads only GPU index 0.

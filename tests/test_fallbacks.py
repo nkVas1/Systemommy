@@ -13,6 +13,7 @@ from systemommy.hardware.cpu import (
     _read_temperature_sysfs,
     _read_temperature_ohm_ps,
     _read_temperature_lhwm_ps,
+    _read_temperature_thermal_zone_info_ps,
     read_cpu,
 )
 from systemommy.hardware.gpu import (
@@ -338,3 +339,64 @@ class TestIsGpuSensor:
         assert not _is_gpu_sensor(
             self._make_sensor("System", "/lpc/it8688e/temperature/2")
         )
+
+
+class TestThermalZoneInfoPsFallback:
+    """Verify Win32_PerfFormattedData_Counters_ThermalZoneInformation fallback."""
+
+    def test_returns_none_on_non_windows(self) -> None:
+        with patch("systemommy.hardware.cpu._IS_WINDOWS", False):
+            assert _read_temperature_thermal_zone_info_ps() is None
+
+    def test_parses_valid_output(self) -> None:
+        # 3231 tenths of Kelvin = 323.1 K = 49.95 °C → rounded to 50.0
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "3231\n"
+
+        with (
+            patch("systemommy.hardware.cpu._IS_WINDOWS", True),
+            patch("systemommy.hardware.cpu.subprocess.run", return_value=mock_result),
+        ):
+            temp = _read_temperature_thermal_zone_info_ps()
+            assert temp is not None
+            assert 49.0 <= temp <= 51.0
+
+    def test_returns_none_on_failure(self) -> None:
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+
+        with (
+            patch("systemommy.hardware.cpu._IS_WINDOWS", True),
+            patch("systemommy.hardware.cpu.subprocess.run", return_value=mock_result),
+        ):
+            assert _read_temperature_thermal_zone_info_ps() is None
+
+    def test_rejects_suspiciously_low_readings(self) -> None:
+        """Readings below 15 °C are rejected (common board artifacts)."""
+        # 2832 tenths of Kelvin = 283.2 K = 10.05 °C → rejected (< 15)
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "2832\n"
+
+        with (
+            patch("systemommy.hardware.cpu._IS_WINDOWS", True),
+            patch("systemommy.hardware.cpu.subprocess.run", return_value=mock_result),
+        ):
+            assert _read_temperature_thermal_zone_info_ps() is None
+
+    def test_picks_max_from_multiple_zones(self) -> None:
+        """When multiple thermal zones report, take the hottest reading."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        # 3231 = 50.0 °C, 3381 = 65.0 °C
+        mock_result.stdout = "3231\n3381\n"
+
+        with (
+            patch("systemommy.hardware.cpu._IS_WINDOWS", True),
+            patch("systemommy.hardware.cpu.subprocess.run", return_value=mock_result),
+        ):
+            temp = _read_temperature_thermal_zone_info_ps()
+            assert temp is not None
+            assert 64.0 <= temp <= 66.0
