@@ -240,15 +240,12 @@ def _read_temperature_thermal_zone_info_ps() -> float | None:
                 try:
                     kelvin_tenths = float(line)
                     celsius = kelvin_tenths / 10.0 - 273.15
-                    if 0 < celsius < 150:  # sanity check
+                    if 15 < celsius < 150:  # sanity + low-reading filter
                         values.append(celsius)
                 except ValueError:
                     continue
         if values:
-            temp = round(max(values), 1)
-            # Reject suspiciously low readings (common on some boards)
-            if temp >= 15.0:
-                return temp
+            return round(max(values), 1)
     except Exception:  # noqa: BLE001
         logger.debug(
             "Thermal zone performance counter read failed.", exc_info=True,
