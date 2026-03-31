@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QPainter, QPaintEvent, QColor, QPen, QPainterPath
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -537,7 +537,12 @@ class _ThermalTab(_ScanlineWidget):
 
 
 class _TemperatureGraphWidget(QWidget):
-    """Custom widget that draws a temperature-over-time line graph."""
+    """Custom widget that draws a temperature-over-time line graph.
+
+    The widget uses :class:`QPainter` directly (no external charting
+    libraries) and handles the case where no data is available yet by
+    showing a short placeholder message.
+    """
 
     _MARGIN_LEFT = 48
     _MARGIN_RIGHT = 12
@@ -552,6 +557,9 @@ class _TemperatureGraphWidget(QWidget):
         self._min_temp = 20.0
         self._max_temp = 100.0
         self.setMinimumHeight(180)
+        # Ensure custom painting is not overridden by the global stylesheet.
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
+        self.setAutoFillBackground(False)
 
     def set_data(
         self,
@@ -604,6 +612,25 @@ class _TemperatureGraphWidget(QWidget):
             painter.end()
             return
 
+        points = self._points
+
+        # Placeholder when there is no renderable data
+        if len(points) < 2:
+            painter.setPen(QPen(QColor(COLOR_TEXT_DIM)))
+            painter.setFont(QFont("Consolas", 11))
+            msg = (
+                "Waiting for data…"
+                if not points
+                else "Collecting data (need ≥ 2 points)…"
+            )
+            painter.drawText(
+                self.rect(),
+                Qt.AlignmentFlag.AlignCenter,
+                msg,
+            )
+            painter.end()
+            return
+
         # Grid
         grid_pen = QPen(QColor(COLOR_BORDER))
         grid_pen.setStyle(Qt.PenStyle.DotLine)
@@ -627,22 +654,20 @@ class _TemperatureGraphWidget(QWidget):
             t += step
 
         # X-axis time labels
-        points = self._points
-        if len(points) >= 2:
-            t_start = points[0].timestamp
-            t_end = points[-1].timestamp
-            t_span = t_end - t_start
-            if t_span > 0:
-                # Draw 4–5 time labels
-                for i in range(5):
-                    frac = i / 4.0
-                    x = ml + int(frac * gw)
-                    ts = t_start + frac * t_span
-                    label = time.strftime("%H:%M", time.localtime(ts))
-                    painter.drawText(
-                        x - 20, h - mb + 4, 40, 14,
-                        Qt.AlignmentFlag.AlignCenter, label,
-                    )
+        t_start = points[0].timestamp
+        t_end = points[-1].timestamp
+        t_span = t_end - t_start
+        if t_span > 0:
+            # Draw 4–5 time labels
+            for i in range(5):
+                frac = i / 4.0
+                x = ml + int(frac * gw)
+                ts = t_start + frac * t_span
+                label = time.strftime("%H:%M", time.localtime(ts))
+                painter.drawText(
+                    x - 20, h - mb + 4, 40, 14,
+                    Qt.AlignmentFlag.AlignCenter, label,
+                )
 
         # Draw temperature lines
         if self._show_cpu:
@@ -790,8 +815,14 @@ class _MetricsTab(_ScanlineWidget):
         return w
 
     def update_graph(self) -> None:
-        """Re-render the graph and stats from current history data."""
-        self._refresh_graph()
+        """Re-render the graph and stats from current history data.
+
+        Uses a zero-delay single-shot timer so that the refresh runs
+        *after* the Qt layout engine has finished calculating widget
+        sizes.  This prevents the graph from being painted while its
+        geometry is still zero (e.g. right after a tab switch).
+        """
+        QTimer.singleShot(0, self._refresh_graph)
 
     def _refresh_graph(self) -> None:
         minutes = self.mode_combo.currentData()
@@ -870,6 +901,10 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.thermal_tab, "♨ Thermal")
         self.tabs.addTab(self.metrics_tab, "▤ Metrics")
 
+        # Remember the Metrics tab index so we can compare by integer
+        # instead of object identity (avoids rare Shiboken wrapper issues).
+        self._metrics_tab_index: int = self.tabs.indexOf(self.metrics_tab)
+
         main_layout.addWidget(self.tabs)
 
         # Status bar
@@ -893,7 +928,7 @@ class MainWindow(QMainWindow):
         """Forward hardware reading to relevant tabs."""
         self.dashboard_tab.update_reading(snapshot)
         # Update metrics graph (only when tab is visible for performance)
-        if self.tabs.currentWidget() is self.metrics_tab:
+        if self.tabs.currentIndex() == self._metrics_tab_index:
             self.metrics_tab.update_graph()
 
     def update_correction_status(
@@ -923,5 +958,5 @@ class MainWindow(QMainWindow):
 
     def _on_tab_changed(self, index: int) -> None:
         """Refresh the metrics graph immediately when its tab is selected."""
-        if self.tabs.widget(index) is self.metrics_tab:
+        if index == self._metrics_tab_index:
             self.metrics_tab.update_graph()

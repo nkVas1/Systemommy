@@ -1,7 +1,7 @@
 """Application constants."""
 
 APP_NAME = "Systemommy"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 ORG_NAME = "Systemommy"
 
 # --- Temperature thresholds (°C) ---
