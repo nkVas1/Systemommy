@@ -22,6 +22,16 @@ Uses platform-specific APIs with a multi-level fallback chain:
 - **WMI python package**  ``wmi`` pip package fallback (Windows).
 
 Falls back to ``None`` when temperature cannot be read by any method.
+
+Sensor matching
+~~~~~~~~~~~~~~~
+OHM / LibreHardwareMonitor expose sensors whose *Name* contains labels
+like ``"CPU Package"``, ``"CPU Core #1"`` (Intel) **or** ``"Core
+(Tctl/Tdie)"``, ``"CCD1 (Tdie)"`` (AMD Ryzen) which do **not** include
+the substring ``"cpu"``.  To handle both vendors we match on a broader
+set of keywords **and** on the ``Identifier`` property which always
+contains ``cpu/`` for processor sensors (e.g.
+``/amdcpu/0/temperature/0``, ``/intelcpu/0/temperature/0``).
 """
 
 from __future__ import annotations
@@ -43,6 +53,37 @@ _IS_WINDOWS = platform.system() == "Windows"
 _SUBPROCESS_FLAGS: int = (
     subprocess.CREATE_NO_WINDOW if _IS_WINDOWS else 0
 )
+
+# PowerShell may need extra time on first invocation (.NET cold-start).
+_PS_TIMEOUT: int = 8
+
+# Keywords that identify a CPU temperature sensor by *Name* in OHM / LHWM.
+# Intel names typically include "cpu" ("CPU Package", "CPU Core #1").
+# AMD Ryzen names often omit "cpu" ("Core (Tctl/Tdie)", "CCD1 (Tdie)").
+_CPU_SENSOR_NAME_KEYWORDS: tuple[str, ...] = (
+    "cpu",
+    "core",
+    "package",
+    "tctl",
+    "tdie",
+    "ccd",
+)
+
+
+def _is_cpu_sensor(sensor) -> bool:
+    """Return *True* if *sensor* is a CPU temperature sensor.
+
+    Checks both the sensor ``Name`` (against a broad keyword list) and the
+    ``Identifier`` property (which contains ``cpu/`` for processor sensors
+    in OHM / LHWM, e.g. ``/amdcpu/0/…``, ``/intelcpu/0/…``).
+    """
+    name_lower = sensor.Name.lower() if hasattr(sensor, "Name") else ""
+    if any(kw in name_lower for kw in _CPU_SENSOR_NAME_KEYWORDS):
+        return True
+    identifier = ""
+    if hasattr(sensor, "Identifier"):
+        identifier = str(sensor.Identifier).lower()
+    return "cpu/" in identifier
 
 
 @dataclass(frozen=True)
@@ -171,7 +212,7 @@ def _read_temperature_powershell() -> float | None:
             ],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=_PS_TIMEOUT,
             check=False,
             creationflags=_SUBPROCESS_FLAGS,
         )
@@ -222,7 +263,7 @@ def _read_temperature_ohm() -> float | None:
         sensors = w.Sensor()
         cpu_temps: list[float] = []
         for sensor in sensors:
-            if sensor.SensorType == "Temperature" and "cpu" in sensor.Name.lower():
+            if sensor.SensorType == "Temperature" and _is_cpu_sensor(sensor):
                 cpu_temps.append(float(sensor.Value))
         if cpu_temps:
             return round(max(cpu_temps), 1)
@@ -247,7 +288,7 @@ def _read_temperature_lhwm() -> float | None:
         sensors = w.Sensor()
         cpu_temps: list[float] = []
         for sensor in sensors:
-            if sensor.SensorType == "Temperature" and "cpu" in sensor.Name.lower():
+            if sensor.SensorType == "Temperature" and _is_cpu_sensor(sensor):
                 cpu_temps.append(float(sensor.Value))
         if cpu_temps:
             return round(max(cpu_temps), 1)
@@ -262,6 +303,10 @@ def _read_temperature_ohm_ps() -> float | None:
     This does **not** require the ``wmi`` Python package — it queries the
     ``root/OpenHardwareMonitor`` WMI namespace through a ``powershell``
     subprocess.  Open Hardware Monitor must be running for this to work.
+
+    The filter matches sensors whose *Identifier* contains ``cpu/``
+    (reliable across Intel ``/intelcpu/`` and AMD ``/amdcpu/``) **or**
+    whose *Name* matches common CPU-thermal keywords.
     """
     if not _IS_WINDOWS:
         return None
@@ -277,13 +322,14 @@ def _read_temperature_ohm_ps() -> float | None:
                     " -ClassName Sensor -ErrorAction Stop"
                     " | Where-Object {"
                     " $_.SensorType -eq 'Temperature' -and"
-                    " $_.Name -match 'cpu'"
+                    " ($_.Identifier -match 'cpu/' -or"
+                    " $_.Name -match 'cpu|core|package|tctl|tdie|ccd')"
                     "} | Select-Object -ExpandProperty Value"
                 ),
             ],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=_PS_TIMEOUT,
             check=False,
             creationflags=_SUBPROCESS_FLAGS,
         )
@@ -326,13 +372,14 @@ def _read_temperature_lhwm_ps() -> float | None:
                     " -ClassName Sensor -ErrorAction Stop"
                     " | Where-Object {"
                     " $_.SensorType -eq 'Temperature' -and"
-                    " $_.Name -match 'cpu'"
+                    " ($_.Identifier -match 'cpu/' -or"
+                    " $_.Name -match 'cpu|core|package|tctl|tdie|ccd')"
                     "} | Select-Object -ExpandProperty Value"
                 ),
             ],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=_PS_TIMEOUT,
             check=False,
             creationflags=_SUBPROCESS_FLAGS,
         )
@@ -389,5 +436,11 @@ def read_cpu() -> CpuReading:
         temp = _read_temperature_powershell()
     if temp is None and _IS_WINDOWS:
         temp = _read_temperature_wmi()
+
+    if temp is None:
+        logger.info(
+            "CPU temperature unavailable — all fallback methods returned None. "
+            "On Windows, install and run LibreHardwareMonitor for reliable readings."
+        )
 
     return CpuReading(temperature=temp, usage_percent=usage)

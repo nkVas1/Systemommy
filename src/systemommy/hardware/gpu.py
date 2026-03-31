@@ -15,6 +15,14 @@ Uses a multi-level fallback chain:
   running; does **not** need the ``wmi`` pip package.
 - **LibreHardwareMonitor (PowerShell)** — Windows only, requires LHWM
   running; does **not** need the ``wmi`` pip package.
+
+Sensor matching
+~~~~~~~~~~~~~~~
+OHM / LHWM sensors are matched by *Name* (for ``"gpu"`` substring) **and**
+by *Identifier* (which contains ``/gpu`` for GPU sensors, e.g.
+``/gpu-nvidia/0/temperature/0``).  The ``Identifier``-based check ensures
+that GPU sensors are found even when their display name does not literally
+contain the substring ``"gpu"``.
 """
 
 from __future__ import annotations
@@ -34,6 +42,30 @@ _IS_WINDOWS = platform.system() == "Windows"
 _SUBPROCESS_FLAGS: int = (
     subprocess.CREATE_NO_WINDOW if _IS_WINDOWS else 0
 )
+
+# PowerShell may need extra time on first invocation (.NET cold-start).
+_PS_TIMEOUT: int = 8
+
+# Keywords that identify a GPU temperature sensor by *Name* in OHM / LHWM.
+_GPU_SENSOR_NAME_KEYWORDS: tuple[str, ...] = (
+    "gpu",
+)
+
+
+def _is_gpu_sensor(sensor) -> bool:
+    """Return *True* if *sensor* is a GPU temperature sensor.
+
+    Checks both the sensor ``Name`` (for ``"gpu"`` substring) and the
+    ``Identifier`` property (which contains ``/gpu`` for GPU sensors in
+    OHM / LHWM, e.g. ``/gpu-nvidia/0/temperature/0``).
+    """
+    name_lower = sensor.Name.lower() if hasattr(sensor, "Name") else ""
+    if any(kw in name_lower for kw in _GPU_SENSOR_NAME_KEYWORDS):
+        return True
+    identifier = ""
+    if hasattr(sensor, "Identifier"):
+        identifier = str(sensor.Identifier).lower()
+    return "/gpu" in identifier
 
 
 @dataclass(frozen=True)
@@ -176,9 +208,9 @@ def _read_ohm_gpu() -> GpuReading | None:
         gpu_temps: list[float] = []
         gpu_name = "GPU"
         for sensor in sensors:
-            if sensor.SensorType == "Temperature" and "gpu" in sensor.Name.lower():
+            if sensor.SensorType == "Temperature" and _is_gpu_sensor(sensor):
                 gpu_temps.append(float(sensor.Value))
-            if sensor.SensorType == "Clock" and "gpu" in sensor.Name.lower():
+            if sensor.SensorType == "Clock" and _is_gpu_sensor(sensor):
                 gpu_name = sensor.Parent if hasattr(sensor, "Parent") else "GPU"
         if gpu_temps:
             return GpuReading(
@@ -207,9 +239,9 @@ def _read_lhwm_gpu() -> GpuReading | None:
         gpu_temps: list[float] = []
         gpu_name = "GPU"
         for sensor in sensors:
-            if sensor.SensorType == "Temperature" and "gpu" in sensor.Name.lower():
+            if sensor.SensorType == "Temperature" and _is_gpu_sensor(sensor):
                 gpu_temps.append(float(sensor.Value))
-            if sensor.SensorType == "Clock" and "gpu" in sensor.Name.lower():
+            if sensor.SensorType == "Clock" and _is_gpu_sensor(sensor):
                 gpu_name = sensor.Parent if hasattr(sensor, "Parent") else "GPU"
         if gpu_temps:
             return GpuReading(
@@ -241,13 +273,14 @@ def _read_ohm_gpu_ps() -> GpuReading | None:
                     " -ClassName Sensor -ErrorAction Stop"
                     " | Where-Object {"
                     " $_.SensorType -eq 'Temperature' -and"
-                    " $_.Name -match 'gpu'"
+                    " ($_.Identifier -match '/gpu' -or"
+                    " $_.Name -match 'gpu')"
                     "} | Select-Object -ExpandProperty Value"
                 ),
             ],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=_PS_TIMEOUT,
             check=False,
             creationflags=_SUBPROCESS_FLAGS,
         )
@@ -293,13 +326,14 @@ def _read_lhwm_gpu_ps() -> GpuReading | None:
                     " -ClassName Sensor -ErrorAction Stop"
                     " | Where-Object {"
                     " $_.SensorType -eq 'Temperature' -and"
-                    " $_.Name -match 'gpu'"
+                    " ($_.Identifier -match '/gpu' -or"
+                    " $_.Name -match 'gpu')"
                     "} | Select-Object -ExpandProperty Value"
                 ),
             ],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=_PS_TIMEOUT,
             check=False,
             creationflags=_SUBPROCESS_FLAGS,
         )
@@ -361,4 +395,8 @@ def read_gpu() -> GpuReading:
     if reading is not None:
         return reading
 
+    logger.info(
+        "GPU temperature unavailable — all fallback methods returned None. "
+        "On Windows, install and run LibreHardwareMonitor for reliable readings."
+    )
     return GpuReading(temperature=None, usage_percent=None, name="Unknown GPU")
